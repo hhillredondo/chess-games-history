@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Footer from "./components/composed/Footer/Footer";
-import Header from "./components/composed/Header/Header";
+import Header from "./components/composed/Header/Header.server";
 
 export const metadata: Metadata = {
   title: "Chess WC Games",

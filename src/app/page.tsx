@@ -1,4 +1,4 @@
-export default function Home() {
+export default async function Home() {
   // Replace with chessboards
   const items = [1, 2, 3, 4, 5, 6];
   return (
