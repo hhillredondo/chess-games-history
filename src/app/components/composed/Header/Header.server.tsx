@@ -14,7 +14,7 @@ export default async function Header() {
 
   return (
     <SessionProvider basePath={BASE_PATH} session={session}>
-      <HeaderClient />
+      <HeaderClient userName={session?.user?.name ?? ""} />
     </SessionProvider>
   );
 }

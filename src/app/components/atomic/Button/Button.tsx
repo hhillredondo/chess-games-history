@@ -11,7 +11,7 @@ export default function Button(props: Readonly<IButtonProps>) {
   return (
     <button
       className={
-        "w-24 rounded-xl border-solid border-2 border-foreground bg-background p-2 font-mono text-foreground"
+        "rounded-xl border-solid border-2 border-[var(--foreground)] p-2 font-mono bg-[var(--background)] text-[var(--foreground)]"
       }
       {...omit("className", otherProps)}
     >

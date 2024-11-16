@@ -1,6 +1,6 @@
 export default function Footer() {
   return (
-    <div className="grid grid-cols-3 w-full text-center py-4">
+    <div className="grid grid-cols-3 w-full text-center py-4 border-solid border-t-2	border-[var(--foreground)]">
       <code>
         <a
           href="https://www.chess.com/news/view/published-data-api"

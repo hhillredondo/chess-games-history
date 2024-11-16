@@ -1,11 +1,12 @@
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import type { Metadata } from "next";
-import "./globals.css";
 import Footer from "./components/composed/Footer/Footer";
 import Header from "./components/composed/Header/Header.server";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Chess WC Games",
-  description: "Chess World Championship Games History",
+  title: "Chess Stats",
+  description: "Some chess games & stats",
 };
 
 export default function RootLayout({
@@ -15,13 +16,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
-        <div className="flex flex-col items-center min-h-screen">
-          <Header />
-          <main className="flex-grow w-full">{children}</main>
-          <Footer />
-        </div>
-      </body>
+      <ThemeProvider>
+        <body>
+          <div className="flex flex-col items-center min-h-screen">
+            <Header />
+            <main className="flex-grow w-full">{children}</main>
+            <Footer />
+          </div>
+        </body>
+      </ThemeProvider>
     </html>
   );
 }
