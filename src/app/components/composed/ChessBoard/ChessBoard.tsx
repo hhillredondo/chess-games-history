@@ -9,15 +9,21 @@ export default function ChessBoard(props: Readonly<IChessBoardProps>) {
   console.log("position: ", position);
 
   const squares: JSX.Element[] = [];
+
   for (let i = 0; i < 64; i++) {
+    const row = Math.floor(i / 8);
+    const col = i % 8;
+
+    const color = (row + col) % 2 === 0 ? "light" : "dark";
+
     squares.push(
-      <ChessBoardSquare
-        key={i}
-        colour={i % 2 === 0 ? "white" : "black"}
-        pieceIcon="bb.png"
-      />
+      <ChessBoardSquare key={i} colour={color} pieceIcon="/bb.png" />
     );
   }
 
-  return <div className="grid grid-cols-8 w-full">{squares}</div>;
+  return (
+    <div className="grid grid-cols-8 w-fit border-solid border-2 border-[-var(--foreground)]">
+      {squares}
+    </div>
+  );
 }
