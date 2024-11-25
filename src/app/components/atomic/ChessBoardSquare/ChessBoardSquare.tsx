@@ -14,8 +14,8 @@ export default function ChessBoardSquare(props: Readonly<IChessSquareProps>) {
     colour === "dark" ? "bg-[var(--background)]" : "bg-[var(--foreground)]";
 
   return (
-    <div className={"w-12 h-12 place-items-center " + backgroundColour}>
-      <Image src={pieceIcon} alt="My Icon" width={24} height={24} />
+    <div className={"flex w-12 h-12 place-items-center " + backgroundColour}>
+      <Image src={pieceIcon} alt="My Icon" width={32} height={32} />
     </div>
   );
 }
