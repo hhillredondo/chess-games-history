@@ -1,3 +1,4 @@
+import { getPiecesFromFEN } from "@/app/core/fenInterpreter";
 import ChessBoardSquare from "../../atomic/ChessBoardSquare/ChessBoardSquare";
 
 export interface IChessBoardProps {
@@ -9,15 +10,17 @@ export default function ChessBoard(props: Readonly<IChessBoardProps>) {
   console.log("position: ", position);
 
   const squares: JSX.Element[] = [];
+  const chessPieces = getPiecesFromFEN(position);
 
   for (let i = 0; i < 64; i++) {
     const row = Math.floor(i / 8);
     const col = i % 8;
 
     const color = (row + col) % 2 === 0 ? "light" : "dark";
+    const pieceIcon = chessPieces.hasOwnProperty(i) ? chessPieces[i] : "";
 
     squares.push(
-      <ChessBoardSquare key={i} colour={color} pieceIcon="/bb.png" />
+      <ChessBoardSquare key={i} colour={color} pieceIcon={pieceIcon} />
     );
   }
 

@@ -15,7 +15,9 @@ export default function ChessBoardSquare(props: Readonly<IChessSquareProps>) {
 
   return (
     <div className={"flex w-12 h-12 place-items-center " + backgroundColour}>
-      <Image src={pieceIcon} alt="My Icon" width={32} height={32} />
+      {pieceIcon !== "" && (
+        <Image src={pieceIcon} alt="My Icon" width={32} height={32} />
+      )}
     </div>
   );
 }
