@@ -1,4 +1,4 @@
-import { getPiecesFromFEN } from "@/app/core/fenInterpreter";
+import { getPiecesPlacementFromFEN } from "@/app/core/fenInterpreter";
 import ChessBoardSquare from "../../atomic/ChessBoardSquare/ChessBoardSquare";
 
 export interface IChessBoardProps {
@@ -10,7 +10,7 @@ export default function ChessBoard(props: Readonly<IChessBoardProps>) {
   console.log("position: ", position);
 
   const squares: JSX.Element[] = [];
-  const chessPieces = getPiecesFromFEN(position);
+  const chessPieces = getPiecesPlacementFromFEN(position);
 
   for (let i = 0; i < 64; i++) {
     const row = Math.floor(i / 8);

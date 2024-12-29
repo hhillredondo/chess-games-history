@@ -11,7 +11,7 @@ export interface IDropdownOption {
   label: string;
 }
 
-export default function Button(props: Readonly<IDropdownProps>) {
+export default function Dropdown(props: Readonly<IDropdownProps>) {
   const { options, currentValue, ...otherProps } = props;
 
   return (

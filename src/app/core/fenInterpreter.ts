@@ -3,7 +3,7 @@ export interface IPiecesFromFEN {
   [key: number]: ChessPieceIcon;
 }
 
-export function getPiecesFromFEN(fen: string): IPiecesFromFEN {
+export function getPiecesPlacementFromFEN(fen: string): IPiecesFromFEN {
   if (!validateFENString(fen)) {
     return {};
   }
@@ -15,3 +15,10 @@ function validateFENString(fen: string): boolean {
   if (!fen) return false;
   return true;
 }
+
+/*
+Each / indicates a new row
+Lowercase letters = black pieces
+Uppercase letters = white pieces
+Numbers indicate empty squares
+*/
