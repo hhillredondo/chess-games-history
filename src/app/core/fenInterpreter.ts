@@ -1,24 +1,10 @@
-import { ChessPieceIcon } from "../globalTypes";
-export interface IPiecesFromFEN {
-  [key: number]: ChessPieceIcon;
-}
+import { Chess } from "chess.js";
 
-export function getPiecesPlacementFromFEN(fen: string): IPiecesFromFEN {
-  if (!validateFENString(fen)) {
-    return {};
+/** Returns a `Chess` instance for a valid FEN, or null. */
+export function chessFromFen(fen: string): Chess | null {
+  try {
+    return new Chess(fen);
+  } catch {
+    return null;
   }
-  return {};
 }
-
-// Regex to ensure valid FEN string
-function validateFENString(fen: string): boolean {
-  if (!fen) return false;
-  return true;
-}
-
-/*
-Each / indicates a new row
-Lowercase letters = black pieces
-Uppercase letters = white pieces
-Numbers indicate empty squares
-*/

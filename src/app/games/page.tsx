@@ -1,14 +1,17 @@
-import ChessBoard from "../_components/composed/ChessBoard/ChessBoard.client";
+import { Suspense } from "react";
 
-// Games page
-export default function Games() {
-  // Replace with chessboards
-  const items = [1, 2, 3, 4, 5, 6];
+import GamesList from "./GamesList.client";
+
+export default function GamesPage() {
   return (
-    <div className="grid grid-cols-3 w-full items-center gap-20 p-8">
-      {items.map((item: number) => (
-        <ChessBoard key={item} position={"123231323131"} />
-      ))}
-    </div>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center" role="status">
+          Loading…
+        </div>
+      }
+    >
+      <GamesList />
+    </Suspense>
   );
 }

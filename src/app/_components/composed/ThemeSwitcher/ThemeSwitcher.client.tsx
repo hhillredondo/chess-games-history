@@ -27,7 +27,7 @@ export default function ThemeSwitcher() {
   const currentTheme = themeOptions.find((option) => option.value === theme);
 
   return (
-    <div className="w-48">
+    <div className="w-fit max-w-full">
       <Dropdown
         options={themeOptions}
         currentValue={currentTheme ?? themeOptions[0]}

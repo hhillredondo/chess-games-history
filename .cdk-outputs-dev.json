@@ -1,0 +1,7 @@
+{
+  "ChessStats-dev": {
+    "S3Bucket": "chessstats-dev-sitebucket397a1860-ni9cigw5ruyu",
+    "SiteUrl": "https://d30kh3s27dfwbs.cloudfront.net",
+    "LambdaUrl": "https://mtm3nuxzsoj2bf7omr4w4obgoy0doegy.lambda-url.eu-central-1.on.aws/"
+  }
+}

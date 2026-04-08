@@ -5,23 +5,29 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "build:export": "NEXT_EXPORT=1 next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "deploy:dev": "bash scripts/deploy.sh dev",
+    "deploy:prod": "bash scripts/deploy.sh prod",
+    "cdk:bootstrap": "cd infra && npm install --prefer-offline --silent && npx cdk bootstrap"
   },
   "dependencies": {
-    "next": "15.0.3",
-    "next-auth": "^5.0.0-beta.25",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@tanstack/react-virtual": "^3.13.23",
+    "chess.js": "^1.4.0",
+    "next": "^16.2.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "eslint": "^8",
-    "eslint-config-next": "15.0.3",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.2",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3"
   }
 }
