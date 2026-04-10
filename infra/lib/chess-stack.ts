@@ -97,6 +97,8 @@ export class ChessStatsStack extends cdk.Stack {
     // strings and headers but replaces Host with the Lambda URL domain
     const apiOrigin = new origins.HttpOrigin(fnUrlDomain, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      // Default is 30s; Lambda allows 60s — without this, CloudFront returns 504 first.
+      readTimeout: cdk.Duration.seconds(60),
     });
 
     const distribution = new cloudfront.Distribution(this, "Distribution", {

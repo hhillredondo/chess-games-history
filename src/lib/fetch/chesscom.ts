@@ -6,6 +6,7 @@ import {
 } from "@/lib/pgn/clock-info";
 import { pgnToFinalFen } from "@/lib/pgn/final-fen";
 import { resultFromPgnHeaders } from "@/lib/pgn/user-result";
+import { resolveOpeningFromLoadedGame } from "@/lib/openings/classify";
 import { Chess } from "chess.js";
 
 interface ArchivesResponse {
@@ -83,7 +84,6 @@ function tryMapGame(
       ? new Date(g.end_time * 1000).toISOString()
       : playedAt;
 
-  const eco = h.ECO?.trim();
   const hist = chess.history({ verbose: true });
   const snap = clocksAtEachPly(pgn, hist);
   const end = snap[hist.length] ?? { white: null, black: null };
@@ -103,7 +103,10 @@ function tryMapGame(
     userColor: rr.userColor,
     pgn,
     finalFen: fen,
-    opening: eco ? { eco } : undefined,
+    opening: resolveOpeningFromLoadedGame(hist, {
+      eco: h.ECO?.trim(),
+      name: h.Opening?.trim(),
+    }),
     timeControl: tc,
     endClockWhite: end.white ?? undefined,
     endClockBlack: end.black ?? undefined,

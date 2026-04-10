@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build-openings": "node scripts/build-openings.mjs",
+    "prebuild": "node scripts/build-openings.mjs",
     "dev": "next dev --turbopack",
     "build": "next build",
+    "prebuild:export": "node scripts/build-openings.mjs",
     "build:export": "NEXT_EXPORT=1 next build",
     "start": "next start",
     "lint": "eslint .",

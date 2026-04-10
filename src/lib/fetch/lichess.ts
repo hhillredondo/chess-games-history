@@ -6,6 +6,7 @@ import {
 } from "@/lib/pgn/clock-info";
 import { pgnToFinalFen } from "@/lib/pgn/final-fen";
 import { resultFromPgnHeaders } from "@/lib/pgn/user-result";
+import { resolveOpeningFromLoadedGame } from "@/lib/openings/classify";
 import { Chess } from "chess.js";
 
 interface LichessNdjsonGame {
@@ -79,9 +80,10 @@ function mapRow(row: LichessNdjsonGame, user: string): UnifiedGame | null {
     userColor: rr.userColor,
     pgn,
     finalFen: fen,
-    opening: row.opening
-      ? { eco: row.opening.eco, name: row.opening.name }
-      : undefined,
+    opening: resolveOpeningFromLoadedGame(hist, {
+      eco: row.opening?.eco,
+      name: row.opening?.name,
+    }),
     timeControl: tc,
     endClockWhite: end.white ?? undefined,
     endClockBlack: end.black ?? undefined,

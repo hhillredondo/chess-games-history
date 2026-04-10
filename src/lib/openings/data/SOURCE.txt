@@ -1,0 +1,4 @@
+TSV files are snapshots from lichess-org/chess-openings (CC0-1.0).
+https://github.com/lichess-org/chess-openings
+
+Regenerate JSON: npm run build-openings
