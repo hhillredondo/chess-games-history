@@ -22,4 +22,10 @@ export interface UnifiedGame {
   endClockWhite?: string;
   /** Remaining clock for Black after the last move in the PGN, if `%clk` data exists. */
   endClockBlack?: string;
+  /** Total half-move count in the PGN. */
+  plyCount: number;
+  /** Raw PGN `[Termination "…"]` value, e.g. `Normal`, `Time forfeit`. */
+  termination?: string;
+  /** Public URL to view the game on its source site, if available. */
+  gameUrl?: string;
 }

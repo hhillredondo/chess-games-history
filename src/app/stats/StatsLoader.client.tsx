@@ -1,144 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 
-import type { ChessComCursor } from "@/lib/fetch/chesscom";
+import FetchActions from "@/app/_components/composed/FetchActions/FetchActions.client";
+import FilterPanel from "@/app/_components/composed/FilterPanel/FilterPanel.client";
+import IngestingLoader from "@/app/_components/composed/IngestingLoader/IngestingLoader.client";
+import ViewTabs from "@/app/_components/composed/ViewTabs/ViewTabs.client";
+import { usePlayerGames } from "@/lib/cache/PlayerGamesContext";
+import {
+  EMPTY_FILTERS,
+  applyFilters,
+  type DerivedFilterOptions,
+  type GameFilters,
+} from "@/lib/filters/game-filters";
 import type { UnifiedGame } from "@/lib/types/unified-game";
 
 import StatsView from "./StatsView.client";
 
-interface PlatformState {
-  games: UnifiedGame[];
-  loaded: number;
-  done: boolean;
-  error?: string;
-}
-
-async function fetchAllForPlatform(
-  platform: "chesscom" | "lichess",
-  username: string,
-  onProgress: (count: number) => void,
-  signal: AbortSignal
-): Promise<{ games: UnifiedGame[]; error?: string }> {
-  const all: UnifiedGame[] = [];
-  let cursor: ChessComCursor | number | null = null;
-  let hasMore = true;
-
-  try {
-    while (hasMore) {
-      if (signal.aborted) return { games: all };
-
-      const q = new URLSearchParams();
-      q.set("perPlatform", "100");
-      if (platform === "chesscom") {
-        q.set("chesscom", username);
-        q.set("noLichess", "1");
-        if (cursor != null) {
-          const cc = cursor as ChessComCursor;
-          q.set("ccMonth", String(cc.monthIdx));
-          q.set("ccSkip", String(cc.gameSkip));
-        }
-      } else {
-        q.set("lichess", username);
-        q.set("noChesscom", "1");
-        if (cursor != null) {
-          q.set("lichessUntil", String(cursor as number));
-        }
-      }
-
-      const r = await fetch(`/api/games?${q}`, { signal });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? r.statusText);
-      }
-      const data = (await r.json()) as {
-        games?: UnifiedGame[];
-        cursors?: {
-          chesscom?: ChessComCursor | null;
-          lichessUntil?: number | null;
-        };
-        hasMore?: boolean;
-      };
-
-      all.push(...(data.games ?? []));
-      onProgress(all.length);
-
-      cursor =
-        platform === "chesscom"
-          ? (data.cursors?.chesscom ?? null)
-          : (data.cursors?.lichessUntil ?? null);
-      hasMore = Boolean(data.hasMore) && cursor != null;
-    }
-    return { games: all };
-  } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError")
-      return { games: all };
-    return {
-      games: all,
-      error: e instanceof Error ? e.message : "Fetch failed",
-    };
-  }
-}
-
 export default function StatsLoader() {
-  const searchParams = useSearchParams();
-  const chesscom = searchParams.get("chesscom") ?? "";
-  const lichess = searchParams.get("lichess") ?? "";
-  const hasCc = Boolean(chesscom.trim());
-  const hasLi = Boolean(lichess.trim());
+  const {
+    chesscom,
+    lichess,
+    ccState,
+    liState,
+    allDone,
+    allGames,
+    filterOptions,
+    refresh,
+    rebuild,
+  } = usePlayerGames();
+  const hasCc = Boolean(chesscom);
+  const hasLi = Boolean(lichess);
 
-  const [ccState, setCcState] = useState<PlatformState>({
-    games: [],
-    loaded: 0,
-    done: false,
-  });
-  const [liState, setLiState] = useState<PlatformState>({
-    games: [],
-    loaded: 0,
-    done: false,
-  });
+  const [committed, setCommitted] = useState<GameFilters>(EMPTY_FILTERS);
+  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    const cc = chesscom.trim();
-    const li = lichess.trim();
-    if (!cc && !li) return;
-
-    const ac = new AbortController();
-
-    if (cc) {
-      setCcState({ games: [], loaded: 0, done: false });
-      fetchAllForPlatform(
-        "chesscom",
-        cc,
-        (count) => setCcState((prev) => ({ ...prev, loaded: count })),
-        ac.signal
-      ).then(({ games, error }) => {
-        if (!ac.signal.aborted)
-          setCcState({ games, loaded: games.length, done: true, error });
-      });
-    } else {
-      setCcState({ games: [], loaded: 0, done: true });
-    }
-
-    if (li) {
-      setLiState({ games: [], loaded: 0, done: false });
-      fetchAllForPlatform(
-        "lichess",
-        li,
-        (count) => setLiState((prev) => ({ ...prev, loaded: count })),
-        ac.signal
-      ).then(({ games, error }) => {
-        if (!ac.signal.aborted)
-          setLiState({ games, loaded: games.length, done: true, error });
-      });
-    } else {
-      setLiState({ games: [], loaded: 0, done: true });
-    }
-
-    return () => ac.abort();
-  }, [chesscom, lichess]);
+  // Analytics charts want oldest-first; context provides newest-first.
+  const allGamesAsc = useMemo(
+    () => [...allGames].sort(
+      (a, b) => new Date(a.endAt).getTime() - new Date(b.endAt).getTime()
+    ),
+    [allGames]
+  );
 
   if (!hasCc && !hasLi) {
     return (
@@ -151,26 +60,29 @@ export default function StatsLoader() {
     );
   }
 
-  const gamesParams = new URLSearchParams();
-  if (hasCc) gamesParams.set("chesscom", chesscom.trim());
-  if (hasLi) gamesParams.set("lichess", lichess.trim());
-  const gamesHref = `/games?${gamesParams.toString()}`;
-
-  const allDone = ccState.done && liState.done;
-
-  const allGames = [...ccState.games, ...liState.games].sort(
-    (a, b) => new Date(a.endAt).getTime() - new Date(b.endAt).getTime()
-  );
-
   return (
     <div className="mx-auto w-full max-w-[min(100%,92rem)] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap gap-4 items-baseline mb-6">
-        <Link href={gamesHref} className="text-sm underline">
-          ← Games
-        </Link>
+      <div className="mb-6">
+        <ViewTabs current="analytics" />
       </div>
 
-      {!allDone && (
+      {/* Server-side ingest in progress: show polling UI with Dynamo counter */}
+      {!allDone && (ccState.serverGamesLoaded !== undefined || liState.serverGamesLoaded !== undefined) && (
+        <IngestingLoader
+          platforms={[
+            ...(hasCc && ccState.serverGamesLoaded !== undefined
+              ? [{ label: "Chess.com", username: chesscom, gamesLoaded: ccState.serverGamesLoaded, error: ccState.error }]
+              : []),
+            ...(hasLi && liState.serverGamesLoaded !== undefined
+              ? [{ label: "Lichess", username: lichess, gamesLoaded: liState.serverGamesLoaded, error: liState.error }]
+              : []),
+          ]}
+          onRebuild={rebuild}
+        />
+      )}
+
+      {/* Client-side shard / direct fetch in progress */}
+      {!allDone && ccState.serverGamesLoaded === undefined && liState.serverGamesLoaded === undefined && (
         <div className="flex flex-col gap-3 max-w-sm mb-8">
           <p className="font-mono text-sm">Loading all games for analysis…</p>
           {hasCc && (
@@ -199,13 +111,70 @@ export default function StatsLoader() {
       )}
 
       {allDone && (
-        <StatsView
-          games={allGames}
+        <StatsViewWithFilter
+          allGames={allGamesAsc}
+          filterOptions={filterOptions}
+          committed={committed}
+          isPending={isPending}
+          onApply={(f) => startTransition(() => setCommitted(f))}
           chesscomCount={ccState.games.length}
           lichessCount={liState.games.length}
           errors={{ chesscom: ccState.error, lichess: liState.error }}
+          onRefresh={refresh}
+          onRebuild={rebuild}
         />
       )}
+    </div>
+  );
+}
+
+function StatsViewWithFilter({
+  allGames,
+  filterOptions,
+  committed,
+  isPending,
+  onApply,
+  chesscomCount,
+  lichessCount,
+  errors,
+  onRefresh,
+  onRebuild,
+}: Readonly<{
+  allGames: UnifiedGame[];
+  filterOptions: DerivedFilterOptions;
+  committed: GameFilters;
+  isPending: boolean;
+  onApply: (f: GameFilters) => void;
+  chesscomCount: number;
+  lichessCount: number;
+  errors: { chesscom?: string; lichess?: string };
+  onRefresh: () => void;
+  onRebuild: () => void;
+}>) {
+  const deferredCommitted = useDeferredValue(committed);
+  const filteredGames = useMemo(
+    () => applyFilters(allGames, deferredCommitted),
+    [allGames, deferredCommitted]
+  );
+
+  return (
+    <div className="flex flex-col gap-8">
+      <FilterPanel
+        committed={committed}
+        options={filterOptions}
+        applying={isPending}
+        onApply={onApply}
+        fields={["timeControl", "dateRange", "color"]}
+        storageKey="analytics"
+      />
+      <FetchActions onRefresh={onRefresh} onRebuild={onRebuild} />
+      <StatsView
+        games={filteredGames}
+        totalCount={allGames.length}
+        chesscomCount={chesscomCount}
+        lichessCount={lichessCount}
+        errors={errors}
+      />
     </div>
   );
 }

@@ -1,7 +1,10 @@
 {
   "ChessStats-dev": {
     "S3Bucket": "chessstats-dev-sitebucket397a1860-ni9cigw5ruyu",
+    "CacheTableName": "chess-stats-dev-cache-meta",
+    "CacheBucketName": "chessstats-dev-cachebucket41d9d0b0-lc4wu0vk7b4e",
     "SiteUrl": "https://d30kh3s27dfwbs.cloudfront.net",
-    "LambdaUrl": "https://mtm3nuxzsoj2bf7omr4w4obgoy0doegy.lambda-url.eu-central-1.on.aws/"
+    "LambdaUrl": "https://mtm3nuxzsoj2bf7omr4w4obgoy0doegy.lambda-url.eu-central-1.on.aws/",
+    "CacheLambdaUrl": "https://7u3awkmjiofd6sku2bmeqlcwwq0inset.lambda-url.eu-central-1.on.aws/"
   }
 }

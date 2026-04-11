@@ -110,16 +110,22 @@ function tryMapGame(
     timeControl: tc,
     endClockWhite: end.white ?? undefined,
     endClockBlack: end.black ?? undefined,
+    plyCount: hist.length,
+    termination: h.Termination?.trim() || undefined,
+    gameUrl: g.url,
   };
 }
 
 /**
  * Fetch up to `limit` games starting at `cursor` (newest months first).
+ * Pass `since` (ISO string) to stop processing months older than that date —
+ * used by refresh to avoid re-downloading the entire history.
  */
 export async function fetchChessComGamesPage(
   username: string,
   limit: number,
-  cursor: ChessComCursor | null
+  cursor: ChessComCursor | null,
+  since?: string
 ): Promise<{
   games: UnifiedGame[];
   nextCursor: ChessComCursor | null;
@@ -161,8 +167,22 @@ export async function fetchChessComGamesPage(
 
   const out: UnifiedGame[] = [];
 
+  // For refresh: only process months on or after the `since` year-month.
+  // Chess.com archive URLs end in /YYYY/MM; months[] is newest-first so once
+  // we pass sinceMonth we've seen everything new.
+  const sinceMonth = since ? since.slice(0, 7) : null; // "YYYY-MM"
+
   while (out.length < limit && monthIdx < months.length) {
     const monthUrl = months[monthIdx]!;
+
+    if (sinceMonth) {
+      const m = /(\d{4})\/(\d{2})$/.exec(monthUrl);
+      const monthStr = m ? `${m[1]}-${m[2]}` : null;
+      if (monthStr && monthStr < sinceMonth) {
+        // This month is entirely before the last sync point — we're done.
+        return { games: out, nextCursor: null };
+      }
+    }
 
     const monthRes = await fetch(monthUrl, {
       headers: publicApiHeaders(),

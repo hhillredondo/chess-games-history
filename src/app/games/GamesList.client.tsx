@@ -2,10 +2,27 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
-import type { ChessComCursor } from "@/lib/fetch/chesscom";
+import FetchActions from "@/app/_components/composed/FetchActions/FetchActions.client";
+import FilterPanel from "@/app/_components/composed/FilterPanel/FilterPanel.client";
+import IngestingLoader from "@/app/_components/composed/IngestingLoader/IngestingLoader.client";
+import QuickStatsBar from "@/app/_components/composed/QuickStatsBar/QuickStatsBar.client";
+import ViewTabs from "@/app/_components/composed/ViewTabs/ViewTabs.client";
+import { computeQuickStats } from "@/lib/analytics/quick-stats";
+import { usePlayerGames } from "@/lib/cache/PlayerGamesContext";
+import {
+  EMPTY_FILTERS,
+  applyFilters,
+  type DerivedFilterOptions,
+  type GameFilters,
+} from "@/lib/filters/game-filters";
 import { formatWallClockDuration } from "@/lib/pgn/clock-info";
 import type { UnifiedGame } from "@/lib/types/unified-game";
 
@@ -17,184 +34,39 @@ function gameKey(g: UnifiedGame): string {
   return `${g.source}:${g.id}`;
 }
 
-function mergeDedupeSortDesc(
-  prev: UnifiedGame[],
-  incoming: UnifiedGame[]
-): UnifiedGame[] {
-  const m = new Map<string, UnifiedGame>();
-  for (const g of prev) {
-    m.set(gameKey(g), g);
-  }
-  for (const g of incoming) {
-    m.set(gameKey(g), g);
-  }
-  return [...m.values()].sort(
-    (a, b) =>
-      new Date(b.endAt).getTime() - new Date(a.endAt).getTime()
-  );
-}
-
-type Platform = "chesscom" | "lichess";
-
-type GamesApiResponse = {
-  games: UnifiedGame[];
-  cursors: {
-    chesscom?: ChessComCursor | null;
-    lichessUntil?: number | null;
-  };
-  hasMore?: boolean;
-  errors?: Record<string, string>;
-};
-
-function PlatformGamesColumn({
-  platform,
-  title,
-  username,
+function MergedGamesView({
+  games,
+  filterOptions,
+  errors,
+  onRefresh,
+  onRebuild,
 }: Readonly<{
-  platform: Platform;
-  title: string;
-  username: string;
+  games: UnifiedGame[];
+  filterOptions: DerivedFilterOptions;
+  errors: { chesscom?: string; lichess?: string };
+  onRefresh: () => void;
+  onRebuild: () => void;
 }>) {
-  const [games, setGames] = useState<UnifiedGame[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
+  const [committed, setCommitted] = useState<GameFilters>(EMPTY_FILTERS);
+  const [isPending, startTransition] = useTransition();
   const [replayGame, setReplayGame] = useState<UnifiedGame | null>(null);
-
-  const cursorRef = useRef<ChessComCursor | number | null>(null);
-  const gamesRef = useRef<UnifiedGame[]>([]);
-  gamesRef.current = games;
-
-  const fetchPage = useCallback(
-    async (append: boolean) => {
-      const u = username.trim();
-      if (!u) throw new Error("Missing username");
-
-      const q = new URLSearchParams();
-      q.set("perPlatform", "100");
-      if (platform === "chesscom") {
-        q.set("chesscom", u);
-        q.set("noLichess", "1");
-        if (append) {
-          const cur = cursorRef.current as ChessComCursor | null;
-          if (cur == null) {
-            throw new Error("No Chess.com cursor (nothing more to load)");
-          }
-          q.set("ccMonth", String(cur.monthIdx));
-          q.set("ccSkip", String(cur.gameSkip));
-        }
-      } else {
-        q.set("lichess", u);
-        q.set("noChesscom", "1");
-        if (append) {
-          const until = cursorRef.current as number | null;
-          if (until == null) {
-            throw new Error("No Lichess cursor (nothing more to load)");
-          }
-          q.set("lichessUntil", String(until));
-        }
-      }
-
-      const r = await fetch(`/api/games?${q}`);
-      const data = (await r.json().catch(() => ({}))) as GamesApiResponse & {
-        error?: string;
-      };
-      if (!r.ok) {
-        throw new Error(
-          typeof data.error === "string" ? data.error : r.statusText
-        );
-      }
-      return data;
-    },
-    [platform, username]
+  const deferredFilters = useDeferredValue(committed);
+  const filtered = useMemo(
+    () => applyFilters(games, deferredFilters),
+    [games, deferredFilters]
   );
-
-  useEffect(() => {
-    if (!username.trim()) {
-      setGames([]);
-      setError(null);
-      setApiError(null);
-      setHasMore(false);
-      cursorRef.current = null;
-      setLoading(false);
-      return;
-    }
-
-    const ac = new AbortController();
-    cursorRef.current = null;
-    setLoading(true);
-    setError(null);
-    setApiError(null);
-    setGames([]);
-    setHasMore(false);
-
-    fetchPage(false)
-      .then((data) => {
-        if (ac.signal.aborted) return;
-        const list = data.games ?? [];
-        setGames(list);
-        if (platform === "chesscom") {
-          cursorRef.current = data.cursors?.chesscom ?? null;
-        } else {
-          cursorRef.current = data.cursors?.lichessUntil ?? null;
-        }
-        setHasMore(Boolean(data.hasMore));
-        const errKey = platform === "chesscom" ? "chesscom" : "lichess";
-        setApiError(data.errors?.[errKey] ?? null);
-      })
-      .catch((e: unknown) => {
-        if (e instanceof Error && e.name === "AbortError") return;
-        setError(e instanceof Error ? e.message : "Request failed");
-        setGames([]);
-        setHasMore(false);
-        cursorRef.current = null;
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
-
-    return () => ac.abort();
-  }, [fetchPage, platform, username]);
-
-  const onLoadMore = useCallback(async () => {
-    if (loading || !hasMore || loadingMore) return;
-
-    setLoadingMore(true);
-    setError(null);
-    try {
-      const data = await fetchPage(true);
-      const merged = mergeDedupeSortDesc(gamesRef.current, data.games ?? []);
-      setGames(merged);
-      if (platform === "chesscom") {
-        cursorRef.current = data.cursors?.chesscom ?? null;
-      } else {
-        cursorRef.current = data.cursors?.lichessUntil ?? null;
-      }
-      setHasMore(Boolean(data.hasMore));
-      const errKey = platform === "chesscom" ? "chesscom" : "lichess";
-      if (data.errors?.[errKey]) {
-        setApiError(data.errors[errKey] ?? null);
-      }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Request failed");
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [fetchPage, hasMore, loading, loadingMore, platform]);
+  const stats = useMemo(() => computeQuickStats(filtered), [filtered]);
 
   const parentRef = useRef<HTMLDivElement>(null);
-
   const virtualizer = useVirtualizer({
-    count: games.length,
+    count: filtered.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 680,
+    estimateSize: () => 500,
     overscan: 6,
   });
 
   return (
-    <section className="flex flex-col gap-3 min-w-0 flex-1">
+    <div className="flex flex-col gap-6">
       {replayGame && (
         <GameReplayModal
           key={gameKey(replayGame)}
@@ -202,31 +74,39 @@ function PlatformGamesColumn({
           onClose={() => setReplayGame(null)}
         />
       )}
-      <h2 className="text-lg font-semibold font-mono border-b border-[var(--foreground)] pb-2">
-        {title}
-      </h2>
 
-      <p className="text-sm opacity-80">
-        {loading
-          ? "Loading…"
-          : `${games.length} game${games.length === 1 ? "" : "s"} loaded (newest first)`}
-      </p>
+      <FilterPanel
+        committed={committed}
+        options={filterOptions}
+        applying={isPending}
+        onApply={(next) => startTransition(() => setCommitted(next))}
+        storageKey="games"
+      />
 
-      {apiError && (
-        <p className="text-sm border border-amber-600 p-2 rounded">
-          <strong>API:</strong> {apiError}
+      {(errors.chesscom || errors.lichess) && (
+        <div className="rounded-lg border border-amber-600 p-3 text-sm">
+          {errors.chesscom && (
+            <p>
+              <strong>Chess.com:</strong> {errors.chesscom}
+            </p>
+          )}
+          {errors.lichess && (
+            <p>
+              <strong>Lichess:</strong> {errors.lichess}
+            </p>
+          )}
+        </div>
+      )}
+
+      <FetchActions onRefresh={onRefresh} onRebuild={onRebuild} />
+
+      <QuickStatsBar stats={stats} totalCount={games.length} />
+
+      {filtered.length === 0 ? (
+        <p className="rounded-lg border border-[var(--foreground)] p-6 text-center text-sm opacity-80">
+          No games match the current filters.
         </p>
-      )}
-
-      {error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
-
-      {!loading && !error && games.length === 0 && (
-        <p className="text-sm opacity-80">No games returned for this user.</p>
-      )}
-
-      {games.length > 0 && (
+      ) : (
         <div
           ref={parentRef}
           className="games-game-list-scroll h-[clamp(22rem,calc(100dvh-10rem),min(56rem,calc(100dvh-8rem)))] overflow-auto rounded-lg border border-[var(--foreground)] bg-[var(--background)]"
@@ -236,22 +116,30 @@ function PlatformGamesColumn({
               height: `${virtualizer.getTotalSize()}px`,
               width: "100%",
               position: "relative",
+              paddingBottom: "1rem",
             }}
           >
             {virtualizer.getVirtualItems().map((v) => {
-              const g = games[v.index];
+              const g = filtered[v.index];
               if (!g) return null;
               return (
                 <div
                   key={gameKey(g)}
-                  className="absolute top-0 left-0 w-full border-b border-[var(--foreground)] p-4 sm:p-5"
+                  ref={virtualizer.measureElement}
+                  data-index={v.index}
+                  className="absolute top-0 left-0 w-full border-b border-[var(--foreground)] px-4 pt-4 pb-12 sm:px-5 sm:pt-5"
                   style={{ transform: `translateY(${v.start}px)` }}
                 >
                   <div className="flex min-w-0 flex-col gap-4">
                     <div className="flex min-w-0 flex-col gap-1.5 text-sm leading-snug">
-                      <span className="break-words">
-                        {new Date(g.endAt).toLocaleString()} ·{" "}
-                        <strong>{g.result}</strong> as {g.userColor}
+                      <span className="flex flex-wrap items-center gap-2 break-words">
+                        <span className="rounded border border-[var(--foreground)]/50 px-1.5 py-0.5 font-mono text-[10.5px] uppercase opacity-80">
+                          {g.source === "chesscom" ? "Chess.com" : "Lichess"}
+                        </span>
+                        <span>
+                          {new Date(g.endAt).toLocaleString()} ·{" "}
+                          <strong>{g.result}</strong> as {g.userColor}
+                        </span>
                       </span>
                       <span className="break-words text-[var(--foreground)]/95">
                         {g.whiteName} ({g.whiteRating ?? "?"}) —{" "}
@@ -266,11 +154,12 @@ function PlatformGamesColumn({
                       <span className="break-words text-xs opacity-80">
                         {g.timeControl && (
                           <>
-                            Time control: <span className="font-mono">{g.timeControl}</span>
+                            Time control:{" "}
+                            <span className="font-mono">{g.timeControl}</span>
                             {" · "}
                           </>
                         )}
-                        Duration:{" "}
+                        Reported span:{" "}
                         <span className="font-mono">
                           {formatWallClockDuration(g.playedAt, g.endAt)}
                         </span>
@@ -288,7 +177,7 @@ function PlatformGamesColumn({
                         </span>
                       )}
                     </div>
-                    <div className="flex shrink-0 justify-center">
+                    <div className="flex shrink-0 flex-col items-center gap-5">
                       <button
                         type="button"
                         onClick={() => setReplayGame(g)}
@@ -297,45 +186,33 @@ function PlatformGamesColumn({
                       >
                         <ChessBoard compact position={g.finalFen} />
                       </button>
+                      {g.gameUrl && (
+                        <a
+                          href={g.gameUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-lg border-2 border-[var(--foreground)] px-4 py-2 font-mono text-sm transition-opacity hover:opacity-70"
+                        >
+                          View on {g.source === "chesscom" ? "Chess.com" : "Lichess"} ↗
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {hasMore && (
-            <div className="border-t border-[var(--foreground)] bg-[var(--background)] px-4 py-8 sm:py-10">
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  disabled={loadingMore || loading}
-                  onClick={() => void onLoadMore()}
-                  className="rounded-xl border-2 border-[var(--foreground)] px-5 py-2.5 font-mono text-sm bg-[var(--background)] text-[var(--foreground)] disabled:opacity-50"
-                >
-                  {loadingMore ? "Loading…" : "Load more"}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
 export default function GamesList() {
-  const searchParams = useSearchParams();
-  const chesscom = searchParams.get("chesscom") ?? "";
-  const lichess = searchParams.get("lichess") ?? "";
-
-  const hasCc = Boolean(chesscom.trim());
-  const hasLi = Boolean(lichess.trim());
-  const hasBoth = hasCc && hasLi;
-
-  const [mobileTab, setMobileTab] = useState<"chesscom" | "lichess">(
-    () => (hasCc ? "chesscom" : "lichess")
-  );
+  const { chesscom, lichess, ccState, liState, allDone, allGames, filterOptions, refresh, rebuild } =
+    usePlayerGames();
+  const hasCc = Boolean(chesscom);
+  const hasLi = Boolean(lichess);
 
   if (!hasCc && !hasLi) {
     return (
@@ -350,110 +227,61 @@ export default function GamesList() {
 
   return (
     <div className="mx-auto flex w-full max-w-[min(100%,92rem)] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-wrap gap-4 justify-between items-baseline">
-        <Link href="/" className="text-sm underline">
-          ← Search
-        </Link>
-        <Link
-          href={`/stats?${new URLSearchParams(
-            Object.fromEntries(
-              [
-                hasCc ? ["chesscom", chesscom] : null,
-                hasLi ? ["lichess", lichess] : null,
-              ].filter((x): x is [string, string] => x !== null)
-            )
-          ).toString()}`}
-          className="text-sm underline"
-        >
-          Stats →
-        </Link>
-      </div>
+      <ViewTabs current="games" />
 
-      {hasBoth && (
-        <div
-          className="lg:hidden flex rounded-xl border-2 border-[var(--foreground)] p-1 gap-1"
-          role="tablist"
-          aria-label="Game source"
-        >
-          <button
-            type="button"
-            role="tab"
-            id="tab-chesscom"
-            aria-selected={mobileTab === "chesscom"}
-            aria-controls="panel-chesscom"
-            tabIndex={mobileTab === "chesscom" ? 0 : -1}
-            onClick={() => setMobileTab("chesscom")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-mono transition-colors ${
-              mobileTab === "chesscom"
-                ? "bg-[var(--foreground)] text-[var(--background)]"
-                : "opacity-80 hover:opacity-100"
-            }`}
-          >
-            Chess.com
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="tab-lichess"
-            aria-selected={mobileTab === "lichess"}
-            aria-controls="panel-lichess"
-            tabIndex={mobileTab === "lichess" ? 0 : -1}
-            onClick={() => setMobileTab("lichess")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-mono transition-colors ${
-              mobileTab === "lichess"
-                ? "bg-[var(--foreground)] text-[var(--background)]"
-                : "opacity-80 hover:opacity-100"
-            }`}
-          >
-            Lichess.org
-          </button>
+      {/* Server-side ingest in progress: show polling UI with Dynamo counter */}
+      {!allDone && (ccState.serverGamesLoaded !== undefined || liState.serverGamesLoaded !== undefined) && (
+        <IngestingLoader
+          platforms={[
+            ...(hasCc && ccState.serverGamesLoaded !== undefined
+              ? [{ label: "Chess.com", username: chesscom, gamesLoaded: ccState.serverGamesLoaded, error: ccState.error }]
+              : []),
+            ...(hasLi && liState.serverGamesLoaded !== undefined
+              ? [{ label: "Lichess", username: lichess, gamesLoaded: liState.serverGamesLoaded, error: liState.error }]
+              : []),
+          ]}
+          onRebuild={rebuild}
+        />
+      )}
+
+      {/* Client-side shard / direct fetch in progress */}
+      {!allDone && ccState.serverGamesLoaded === undefined && liState.serverGamesLoaded === undefined && (
+        <div className="flex max-w-sm flex-col gap-3">
+          <p className="font-mono text-sm">Loading all games…</p>
+          {hasCc && (
+            <p className="text-sm">
+              Chess.com:{" "}
+              {ccState.done
+                ? `${ccState.loaded} games`
+                : `${ccState.loaded} games…`}
+              {ccState.error && (
+                <span className="ml-2 text-red-500">{ccState.error}</span>
+              )}
+            </p>
+          )}
+          {hasLi && (
+            <p className="text-sm">
+              Lichess:{" "}
+              {liState.done
+                ? `${liState.loaded} games`
+                : `${liState.loaded} games…`}
+              {liState.error && (
+                <span className="ml-2 text-red-500">{liState.error}</span>
+              )}
+            </p>
+          )}
         </div>
       )}
 
-      <div
-        className={
-          hasBoth
-            ? "grid grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-12 xl:gap-14"
-            : "flex flex-col gap-6"
-        }
-      >
-        {hasCc && (
-          <div
-            id="panel-chesscom"
-            role={hasBoth ? "tabpanel" : undefined}
-            aria-labelledby={hasBoth ? "tab-chesscom" : undefined}
-            className={
-              hasBoth && mobileTab !== "chesscom"
-                ? "min-w-0 hidden lg:block"
-                : "min-w-0"
-            }
-          >
-            <PlatformGamesColumn
-              platform="chesscom"
-              title="Chess.com"
-              username={chesscom}
-            />
-          </div>
-        )}
-        {hasLi && (
-          <div
-            id="panel-lichess"
-            role={hasBoth ? "tabpanel" : undefined}
-            aria-labelledby={hasBoth ? "tab-lichess" : undefined}
-            className={
-              hasBoth && mobileTab !== "lichess"
-                ? "min-w-0 hidden lg:block"
-                : "min-w-0"
-            }
-          >
-            <PlatformGamesColumn
-              platform="lichess"
-              title="Lichess.org"
-              username={lichess}
-            />
-          </div>
-        )}
-      </div>
+      {allDone && (
+        <MergedGamesView
+          games={allGames}
+          filterOptions={filterOptions}
+          errors={{ chesscom: ccState.error, lichess: liState.error }}
+          onRefresh={refresh}
+          onRebuild={rebuild}
+        />
+      )}
     </div>
   );
 }

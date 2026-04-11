@@ -21,16 +21,16 @@ export default function SearchForm() {
     (e: React.FormEvent) => {
       e.preventDefault();
       const q = buildParams();
-      router.push(q ? `/games?${q}` : "/games");
+      router.push(q ? `/stats?${q}` : "/stats");
     },
     [buildParams, router]
   );
 
-  const onStats = useCallback(
+  const onGames = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       const q = buildParams();
-      router.push(q ? `/stats?${q}` : "/stats");
+      router.push(q ? `/games?${q}` : "/games");
     },
     [buildParams, router]
   );
@@ -65,8 +65,8 @@ export default function SearchForm() {
         are set.
       </p>
       <div className="flex gap-2">
-        <Button type="submit" text="Load games" />
-        <Button type="button" text="Stats" onClick={onStats} />
+        <Button type="submit" text="Analyze" />
+        <Button type="button" text="Browse games" onClick={onGames} />
       </div>
     </form>
   );

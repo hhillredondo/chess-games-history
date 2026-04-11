@@ -10,8 +10,8 @@ type Point = {
   date: Date;
 };
 
-const W = 680;
-const H = 520;
+const W = 1020;
+const H = 780;
 const PAD = { top: 20, right: 20, bottom: 52, left: 60 };
 const plotW = W - PAD.left - PAD.right;
 const plotH = H - PAD.top - PAD.bottom;
@@ -32,10 +32,21 @@ function tukeyFence(values: number[]): { lo: number; hi: number } {
   return { lo: q1 - 1.5 * iqr, hi: q3 + 1.5 * iqr };
 }
 
+const TOOLTIP_WIDTH = 160;
+
 export default function SessionEloChart({ sessions }: { sessions: Session[] }) {
   const [showOutliers, setShowOutliers] = useState(false);
-  const [tooltip, setTooltip] = useState<{ point: Point; x: number; y: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{ point: Point; left: number; top: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  function positionTooltip(clientX: number, clientY: number): { left: number; top: number } {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const containerWidth = containerRef.current?.offsetWidth ?? W;
+    const x = rect ? clientX - rect.left : clientX;
+    const y = rect ? clientY - rect.top : clientY;
+    const left = x + 12 + TOOLTIP_WIDTH > containerWidth ? x - TOOLTIP_WIDTH - 12 : x + 12;
+    return { left, top: y - 8 };
+  }
 
   const allPoints: Point[] = sessions.flatMap((s) =>
     s.eloGain !== undefined
@@ -111,17 +122,13 @@ export default function SessionEloChart({ sessions }: { sessions: Session[] }) {
   const regEnd = regressionPoint(xMax);
 
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setTooltip((prev) =>
-      prev ? { ...prev, x: e.clientX - rect.left, y: e.clientY - rect.top } : null
-    );
+    const pos = positionTooltip(e.clientX, e.clientY);
+    setTooltip((prev) => (prev ? { ...prev, ...pos } : null));
   }
 
   function handleCircleEnter(e: React.MouseEvent<SVGCircleElement>, point: Point) {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setTooltip({ point, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const pos = positionTooltip(e.clientX, e.clientY);
+    setTooltip({ point, ...pos });
   }
 
   return (
@@ -264,7 +271,7 @@ export default function SessionEloChart({ sessions }: { sessions: Session[] }) {
                 cx={cx}
                 cy={cy}
                 r={5}
-                fill="none"
+                fill="transparent"
                 stroke={p.eloGain > 0 ? "#4caf72" : p.eloGain < 0 ? "#d45555" : "currentColor"}
                 strokeOpacity={0.5}
                 strokeWidth={1.5}
@@ -292,19 +299,16 @@ export default function SessionEloChart({ sessions }: { sessions: Session[] }) {
       </svg>
 
       {tooltip && (() => {
-        const { point, x, y } = tooltip;
-        const containerWidth = containerRef.current?.offsetWidth ?? W;
-        const tipWidth = 160;
-        const left = x + 12 + tipWidth > containerWidth ? x - tipWidth - 12 : x + 12;
-        const top = y - 8;
+        const { point, left, top } = tooltip;
         const eloLabel = point.eloGain > 0 ? `+${point.eloGain}` : String(point.eloGain);
         const dateLabel = point.date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
         return (
           <div
-            style={{ left, top, width: tipWidth, pointerEvents: "none" }}
+            style={{ left, top, width: TOOLTIP_WIDTH, pointerEvents: "none" }}
             className="absolute z-10 rounded-md border border-[var(--foreground)] bg-[var(--background)] px-3 py-2 text-xs shadow-lg opacity-90"
           >
-            <div className="font-semibold mb-1 opacity-80">{dateLabel}</div>
+            <div className="font-semibold mb-0.5 opacity-80">{dateLabel}</div>
+            <div className="mb-1 opacity-50">{point.date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</div>
             <div className="flex justify-between gap-2">
               <span className="opacity-60">Duration</span>
               <span>{formatDuration(point.durationMin)}</span>

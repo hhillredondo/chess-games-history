@@ -1,18 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import ChessBoard from "@/app/_components/composed/ChessBoard/ChessBoard.client";
+import CollapsibleSection from "@/app/_components/composed/CollapsibleSection/CollapsibleSection.client";
+import ExplainerModal from "@/app/_components/composed/ExplainerModal/ExplainerModal.client";
+import { fenForOpening } from "@/lib/openings/classify";
+import { computeClockStats } from "@/lib/analytics/clock-stats";
 import { aggregateOpenings } from "@/lib/analytics/openings";
 import { extractRatingHistory } from "@/lib/analytics/ratings";
 import { clusterSessions } from "@/lib/analytics/sessions";
 import type { Session } from "@/lib/analytics/sessions";
+import { computeTerminationStats } from "@/lib/analytics/termination-stats";
+import { computeTimeOfDayStats } from "@/lib/analytics/time-of-day";
 import type { UnifiedGame } from "@/lib/types/unified-game";
 
+import CheckmatesSection from "./CheckmatesSection.client";
+import ClockStatsSection from "./ClockStatsSection.client";
+import PeriodChart from "./PeriodChart.client";
 import RatingChart from "./RatingChart.client";
 import SessionEloChart from "./SessionEloChart.client";
+import TerminationChart from "./TerminationChart.client";
+import TimeOfDayChart from "./TimeOfDayChart.client";
+
+const OPENINGS_DEFAULT_ROWS = 10;
 
 interface StatsViewProps {
   games: UnifiedGame[];
+  /** Total unfiltered game count (to show "X of Y" when filters are active). */
+  totalCount?: number;
   chesscomCount: number;
   lichessCount: number;
   errors: { chesscom?: string; lichess?: string };
@@ -29,12 +45,30 @@ function fmtMs(ms: number): string {
 
 export default function StatsView({
   games,
+  totalCount,
   chesscomCount,
   lichessCount,
   errors,
 }: StatsViewProps) {
   const [gapMinutes, setGapMinutes] = useState(30);
   const [openingTab, setOpeningTab] = useState<"white" | "black">("white");
+  const [showAllOpenings, setShowAllOpenings] = useState(false);
+  type OpeningSortKey = "games" | "winRate" | "wins" | "draws" | "losses";
+  const [openingSort, setOpeningSort] = useState<{ key: OpeningSortKey; dir: "desc" | "asc" }>({ key: "games", dir: "desc" });
+  const [openingModal, setOpeningModal] = useState<{
+    title: string;
+    fen: string;
+    orientation: "white" | "black";
+  } | null>(null);
+
+  useEffect(() => {
+    if (!openingModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpeningModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openingModal]);
 
   const sessionStats = useMemo(
     () => clusterSessions(games, gapMinutes),
@@ -42,6 +76,9 @@ export default function StatsView({
   );
   const openingStats = useMemo(() => aggregateOpenings(games, 3), [games]);
   const ratingHistory = useMemo(() => extractRatingHistory(games), [games]);
+  const terminationStats = useMemo(() => computeTerminationStats(games), [games]);
+  const timeOfDayStats = useMemo(() => computeTimeOfDayStats(games), [games]);
+  const clockStats = useMemo(() => computeClockStats(games), [games]);
 
   const dateRange = useMemo(() => {
     if (games.length === 0) return null;
@@ -95,14 +132,67 @@ export default function StatsView({
     return <p className="p-8 text-center opacity-70">No games loaded.</p>;
   }
 
-  const openingEntries =
+  const openingEntriesRaw =
     openingTab === "white" ? openingStats.asWhite : openingStats.asBlack;
+
+  const openingEntries = useMemo(() => {
+    const sorted = [...openingEntriesRaw].sort((a, b) => {
+      const v = (x: typeof a) => {
+        if (openingSort.key === "games") return x.games;
+        if (openingSort.key === "winRate") return x.winRate;
+        if (openingSort.key === "wins") return x.wins;
+        if (openingSort.key === "draws") return x.draws;
+        return x.losses;
+      };
+      return openingSort.dir === "desc" ? v(b) - v(a) : v(a) - v(b);
+    });
+    return sorted;
+  }, [openingEntriesRaw, openingSort]);
 
   return (
     <div className="flex flex-col gap-12">
+      {/* ── Opening board modal ───────────────────────────────────────────── */}
+      {openingModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={openingModal.title}
+          onClick={() => setOpeningModal(null)}
+        >
+          <div
+            className="absolute inset-0 bg-[color-mix(in_srgb,var(--foreground)_25%,transparent)]"
+            aria-hidden
+          />
+          <div
+            className="relative z-10 flex flex-col items-center gap-5 rounded-xl border-2 border-[var(--foreground)] bg-[var(--background)] p-5 shadow-lg sm:p-7"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-center text-lg font-semibold leading-snug">
+              {openingModal.title}
+            </h2>
+            <ChessBoard
+              position={openingModal.fen}
+              orientation={openingModal.orientation}
+              large
+            />
+            <button
+              type="button"
+              onClick={() => setOpeningModal(null)}
+              className="rounded-lg border-2 border-[var(--foreground)] px-5 py-2 font-mono text-sm hover:opacity-80"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── Summary ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm opacity-80">
-        <span>{games.length} games</span>
+        <span>
+          {totalCount != null && totalCount !== games.length
+            ? `${games.length.toLocaleString()} of ${totalCount.toLocaleString()} games`
+            : `${games.length.toLocaleString()} games`}
+        </span>
         {chesscomCount > 0 && <span>Chess.com: {chesscomCount}</span>}
         {lichessCount > 0 && <span>Lichess: {lichessCount}</span>}
         {dateRange && (
@@ -124,11 +214,35 @@ export default function StatsView({
       </div>
 
       {/* ── Session Analytics ────────────────────────────────────────── */}
-      <section className="flex flex-col gap-6">
-        <h2 className="text-lg font-semibold border-b border-[var(--foreground)] pb-2">
-          Session Analytics
-        </h2>
-
+      <CollapsibleSection
+        id="session-analytics"
+        title="Session Analytics"
+        explainer={
+          <ExplainerModal title="Session Analytics">
+            <p>
+              A <strong>session</strong> is a run of consecutive games played
+              without a gap longer than the threshold you set. If you step away
+              for longer than the threshold, the next game starts a new
+              session.
+            </p>
+            <p>
+              <strong>What is shown:</strong> number of sessions, average games
+              and duration per session, longest sessions by game count and by
+              time, and a histogram of session sizes.
+            </p>
+            <p>
+              <strong>Correspondence games</strong> (daily) are excluded here
+              because their wall-clock duration is dominated by waiting, not
+              playing.
+            </p>
+            <p>
+              <strong>Best / worst sessions by ELO:</strong> only sessions whose
+              first and last games both carry a rating for the same platform
+              and time control are scored.
+            </p>
+          </ExplainerModal>
+        }
+      >
         <div className="flex flex-col gap-2 max-w-sm">
           <label className="text-sm flex justify-between items-center">
             <span>Session gap threshold</span>
@@ -191,7 +305,7 @@ export default function StatsView({
         )}
 
         {histogram.length > 0 && (() => {
-          const BW = 560, BH = 200;
+          const BW = 1020, BH = 390;
           const BP = { top: 16, right: 16, bottom: 44, left: 44 };
           const bPlotW = BW - BP.left - BP.right;
           const bPlotH = BH - BP.top - BP.bottom;
@@ -208,7 +322,7 @@ export default function StatsView({
               <p className="text-sm font-medium">Session size distribution</p>
               <svg
                 viewBox={`0 0 ${BW} ${BH}`}
-                className="w-full max-w-lg"
+                className="w-full"
                 style={{ maxHeight: BH }}
                 aria-label="Session size distribution bar chart"
               >
@@ -394,14 +508,31 @@ export default function StatsView({
             Each dot is one session. Green = ELO gain, red = ELO loss.
           </p>
         )}
-      </section>
+      </CollapsibleSection>
 
       {/* ── Opening Stats ─────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold border-b border-[var(--foreground)] pb-2">
-          Opening Stats
-        </h2>
-
+      <CollapsibleSection
+        id="opening-stats"
+        title="Opening Stats"
+        explainer={
+          <ExplainerModal title="Opening Stats">
+            <p>
+              Openings are grouped by the PGN <code>Opening</code> header that
+              Chess.com and Lichess attach to each game. The tab switches
+              between games you played as White and as Black.
+            </p>
+            <p>
+              <strong>Minimum sample:</strong> an opening only appears if you
+              played it at least <strong>3 times</strong> on the selected side.
+              <strong> Win%</strong> counts draws as half a win.
+            </p>
+            <p>
+              By default the top {OPENINGS_DEFAULT_ROWS} openings are shown.
+              Click <em>Show all</em> to expand the full list.
+            </p>
+          </ExplainerModal>
+        }
+      >
         <div className="flex gap-2">
           {(["white", "black"] as const).map((side) => (
             <button
@@ -423,72 +554,288 @@ export default function StatsView({
           <p className="text-sm opacity-60">
             Not enough data — need at least 3 games per opening to appear.
           </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-[var(--foreground)]">
-                  <th className="text-left py-2 pr-4 font-medium">Opening</th>
-                  <th className="text-right py-2 px-2 font-medium">Games</th>
-                  <th className="text-right py-2 px-2 font-medium">Win%</th>
-                  <th className="text-right py-2 px-2 font-medium">W</th>
-                  <th className="text-right py-2 px-2 font-medium">D</th>
-                  <th className="text-right py-2 pl-2 font-medium">L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openingEntries.slice(0, 20).map((e) => (
-                  <tr
-                    key={e.key}
-                    className="border-b border-[var(--foreground)]/20 hover:bg-[var(--foreground)]/5"
-                  >
-                    <td
-                      className="py-2 pr-4 max-w-xs truncate"
-                      title={e.key}
-                    >
-                      {e.key}
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono tabular-nums">
-                      {e.games}
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono tabular-nums">
-                      {Math.round(e.winRate * 100)}%
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono tabular-nums">
-                      {e.wins}
-                    </td>
-                    <td className="text-right py-2 px-2 font-mono tabular-nums">
-                      {e.draws}
-                    </td>
-                    <td className="text-right py-2 pl-2 font-mono tabular-nums">
-                      {e.losses}
-                    </td>
+        ) : (() => {
+          const visible = showAllOpenings
+            ? openingEntries
+            : openingEntries.slice(0, OPENINGS_DEFAULT_ROWS);
+          const hiddenCount = openingEntries.length - visible.length;
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-[var(--foreground)]">
+                    <th className="text-left py-2 pr-4 font-medium">Opening</th>
+                    {(
+                      [
+                        { key: "games" as OpeningSortKey, label: "Games" },
+                        { key: "winRate" as OpeningSortKey, label: "Win%" },
+                        { key: "wins" as OpeningSortKey, label: "W" },
+                        { key: "draws" as OpeningSortKey, label: "D" },
+                        { key: "losses" as OpeningSortKey, label: "L" },
+                      ] as { key: OpeningSortKey; label: string }[]
+                    ).map(({ key, label }) => (
+                      <th
+                        key={key}
+                        className="text-right py-2 px-2 font-medium"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpeningSort((prev) =>
+                              prev.key === key
+                                ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
+                                : { key, dir: "desc" }
+                            )
+                          }
+                          className="inline-flex items-center gap-1 hover:opacity-100 opacity-80 font-medium"
+                        >
+                          {label}
+                          <span className="font-mono text-[10px] opacity-60">
+                            {openingSort.key === key
+                              ? openingSort.dir === "desc"
+                                ? "↓"
+                                : "↑"
+                              : "↕"}
+                          </span>
+                        </button>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {openingEntries.length > 20 && (
-              <p className="text-xs opacity-55 mt-2">
-                Showing top 20 of {openingEntries.length} openings (min 3 games
-                each).
-              </p>
-            )}
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {visible.map((e) => (
+                    <tr
+                      key={e.key}
+                      className="border-b border-[var(--foreground)]/20 hover:bg-[var(--foreground)]/5"
+                    >
+                      <td className="py-2 pr-4 max-w-xs">
+                        <button
+                          type="button"
+                          title={e.key}
+                          onClick={() => {
+                            const fen = fenForOpening(e.eco, e.name);
+                            if (fen) setOpeningModal({ title: e.key, fen, orientation: openingTab });
+                          }}
+                          className="truncate cursor-pointer text-left hover:underline max-w-xs"
+                        >
+                          {e.key}
+                        </button>
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono tabular-nums">
+                        {e.games}
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono tabular-nums">
+                        {Math.round(e.winRate * 100)}%
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono tabular-nums">
+                        {e.wins}
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono tabular-nums">
+                        {e.draws}
+                      </td>
+                      <td className="text-right py-2 pl-2 font-mono tabular-nums">
+                        {e.losses}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {openingEntries.length > OPENINGS_DEFAULT_ROWS && (
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllOpenings((v) => !v)}
+                    className="rounded-lg border border-[var(--foreground)] px-3 py-1.5 font-mono text-xs hover:opacity-80"
+                  >
+                    {showAllOpenings
+                      ? `Show top ${OPENINGS_DEFAULT_ROWS}`
+                      : `Show all (${openingEntries.length})`}
+                  </button>
+                  {!showAllOpenings && hiddenCount > 0 && (
+                    <span className="text-xs opacity-55">
+                      {hiddenCount} more hidden · min 3 games each
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </CollapsibleSection>
 
       {/* ── Rating Trend ──────────────────────────────────────────────── */}
       {ratingHistory.length >= 2 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold border-b border-[var(--foreground)] pb-2">
-            Rating Trend
-          </h2>
+        <CollapsibleSection
+          id="rating-trend"
+          title="Rating Trend"
+          explainer={
+            <ExplainerModal title="Rating Trend">
+              <p>
+                Each point is the rating attached to a game&rsquo;s
+                <code> WhiteElo </code> or <code>BlackElo</code> header for
+                your side. A separate line is drawn per platform (Chess.com
+                and Lichess) since ratings are not comparable across sites.
+              </p>
+              <p>
+                <strong>All time controls are combined</strong> on a single
+                line per platform — bullet, blitz, rapid, and classical
+                ratings are plotted together. Sharp jumps usually mean you
+                switched time control rather than actually gaining or losing
+                rating.
+              </p>
+            </ExplainerModal>
+          }
+        >
           <p className="text-xs opacity-55">
             All time controls combined — separate lines per platform.
           </p>
           <RatingChart points={ratingHistory} />
-        </section>
+        </CollapsibleSection>
       )}
+
+      {/* ── Games per Period ─────────────────────────────────────────── */}
+      <CollapsibleSection
+        id="games-per-period"
+        title="Games per Period"
+        explainer={
+          <ExplainerModal title="Games per Period">
+            <p>
+              Histogram of games played over time, bucketed by year, month,
+              week, or day. Each bar is split into wins (green), draws (grey),
+              and losses (red). Hover a bar for exact counts.
+            </p>
+            <p>
+              Dates are derived from each game&rsquo;s <code>endAt</code>{" "}
+              timestamp in your local browser timezone.
+            </p>
+          </ExplainerModal>
+        }
+      >
+        <PeriodChart games={games} />
+      </CollapsibleSection>
+
+      {/* ── Game End Type ────────────────────────────────────────────── */}
+      {terminationStats.length > 0 && (
+        <CollapsibleSection
+          id="termination-breakdown"
+          title="Game End Type"
+          explainer={
+            <ExplainerModal title="Game End Type">
+              <p>
+                Each game is classified into one of ten end-type buckets based
+                on the PGN <code>Termination</code> header and the final
+                position (inspected with chess.js).
+              </p>
+              <p>
+                <strong>Coverage:</strong> some games only carry{" "}
+                <em>Normal</em> or no termination tag — these fall into{" "}
+                <em>Resignation</em> (for decisive games) or{" "}
+                <em>Agreement</em> (for draws) by convention.{" "}
+                <em>Other / Unknown</em> slices mean the data was ambiguous.
+              </p>
+              <p>
+                Switch between <em>Stacked</em> (total height = total games)
+                and <em>Grouped</em> (W/D/L side-by-side per bucket).
+              </p>
+            </ExplainerModal>
+          }
+        >
+          <TerminationChart rows={terminationStats} />
+        </CollapsibleSection>
+      )}
+
+      {/* ── Time of Day ──────────────────────────────────────────────── */}
+      <CollapsibleSection
+        id="time-of-day"
+        title="Time of Day"
+        explainer={
+          <ExplainerModal title="Time of Day">
+            <p>
+              Games grouped into four local-time buckets based on when each
+              game ended (your browser&rsquo;s timezone):
+            </p>
+            <ul>
+              <li>
+                <strong>Morning</strong> 06:00–11:59
+              </li>
+              <li>
+                <strong>Afternoon</strong> 12:00–17:59
+              </li>
+              <li>
+                <strong>Evening</strong> 18:00–23:59
+              </li>
+              <li>
+                <strong>Night</strong> 00:00–05:59
+              </li>
+            </ul>
+            <p>
+              Win% shown above each bar uses{" "}
+              <em>(wins + 0.5 × draws) / decided games</em>.
+            </p>
+          </ExplainerModal>
+        }
+      >
+        <TimeOfDayChart rows={timeOfDayStats} />
+      </CollapsibleSection>
+
+      {/* ── Checkmates ───────────────────────────────────────────────── */}
+      <CollapsibleSection
+        id="checkmates"
+        title="Checkmates"
+        explainer={
+          <ExplainerModal title="Checkmates">
+            <p>
+              <strong>Delivering piece:</strong> the piece that made the final
+              move in games ending in checkmate, attributed as{" "}
+              <em>given</em> (you mated the opponent) or{" "}
+              <em>received</em> (opponent mated you).
+            </p>
+            <p>
+              <strong>Material balance:</strong> simple piece-value sum (Q=9
+              R=5 B/N=3 P=1) from the final FEN, from your perspective.
+              &ldquo;Ahead&rdquo; means you had more material when the
+              checkmate landed.
+            </p>
+            <p>
+              Only games whose final position is a legal checkmate are counted.
+              Games with broken or missing PGN are skipped.
+            </p>
+          </ExplainerModal>
+        }
+      >
+        <CheckmatesSection games={games} />
+      </CollapsibleSection>
+
+      {/* ── Clock / Time Management ──────────────────────────────────── */}
+      <CollapsibleSection
+        id="clock-stats"
+        title="Clock Management"
+        explainer={
+          <ExplainerModal title="Clock Management">
+            <p>
+              Statistics based on the remaining clock time for each player at
+              the end of the game, read from <code>%clk</code> annotations in
+              the PGN.
+            </p>
+            <p>
+              <strong>Correspondence games are excluded</strong> — their
+              time-control mechanics make clock values meaningless here. All
+              figures are for live games only.
+            </p>
+            <p>
+              <strong>Coverage depends on your exports:</strong> many older
+              games or platform settings omit clock annotations entirely.
+              Always check the sample size shown.
+            </p>
+            <p>
+              <em>Ahead on clock</em> means you had more clock remaining than
+              your opponent when the last move was played.
+            </p>
+          </ExplainerModal>
+        }
+      >
+        <ClockStatsSection stats={clockStats} />
+      </CollapsibleSection>
     </div>
   );
 }

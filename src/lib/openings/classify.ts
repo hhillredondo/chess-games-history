@@ -1,3 +1,4 @@
+import { Chess } from "chess.js";
 import type { Move } from "chess.js";
 
 import openingsData from "./lichess-openings.json";
@@ -53,6 +54,30 @@ export function classifyOpeningFromVerboseHistory(
     if (next.opening) last = next.opening;
   }
   return last ?? null;
+}
+
+/**
+ * Return the FEN after replaying an opening's moves, looked up by ECO + name.
+ * Falls back to name-only, then ECO-only. Returns null when not found.
+ */
+export function fenForOpening(
+  eco: string | undefined,
+  name: string
+): string | null {
+  const rows = openingsData as OpeningRow[];
+  const row =
+    (eco ? rows.find((r) => r.e === eco && r.n === name) : undefined) ??
+    rows.find((r) => r.n === name) ??
+    (eco ? rows.find((r) => r.e === eco) : undefined);
+
+  if (!row) return null;
+  try {
+    const chess = new Chess();
+    for (const move of row.m) chess.move(move);
+    return chess.fen();
+  } catch {
+    return null;
+  }
 }
 
 /**

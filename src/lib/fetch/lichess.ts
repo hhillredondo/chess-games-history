@@ -87,16 +87,22 @@ function mapRow(row: LichessNdjsonGame, user: string): UnifiedGame | null {
     timeControl: tc,
     endClockWhite: end.white ?? undefined,
     endClockBlack: end.black ?? undefined,
+    plyCount: hist.length,
+    termination: h.Termination?.trim() || undefined,
+    gameUrl: `https://lichess.org/${row.id}`,
   };
 }
 
 /**
- * Fetch up to `limit` games. Pass `until` (ms) from a previous `nextUntil` to get older games.
+ * Fetch up to `limit` games. Pass `until` (ms) from a previous `nextUntil` to
+ * get older games. Pass `since` (ms) to stop once all games are older than
+ * that timestamp — used by refresh to avoid re-downloading full history.
  */
 export async function fetchLichessGamesPage(
   username: string,
   limit: number,
-  until: number | undefined
+  until: number | undefined,
+  since?: number
 ): Promise<{
   games: UnifiedGame[];
   /** Pass to the next request to continue (older games). Null if no more. */
@@ -120,6 +126,9 @@ export async function fetchLichessGamesPage(
     url.searchParams.set("clocks", "true");
     if (pageUntil != null) {
       url.searchParams.set("until", String(pageUntil));
+    }
+    if (since != null) {
+      url.searchParams.set("since", String(since));
     }
 
     const res = await fetch(url, {

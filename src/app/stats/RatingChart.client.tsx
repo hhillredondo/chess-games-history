@@ -7,8 +7,8 @@ const PLATFORM_COLORS: Record<string, string> = {
   lichess: "#3070e0",
 };
 
-const W = 800;
-const H = 280;
+const W = 1200;
+const H = 420;
 const PAD = { top: 20, right: 20, bottom: 50, left: 60 };
 const plotW = W - PAD.left - PAD.right;
 const plotH = H - PAD.top - PAD.bottom;

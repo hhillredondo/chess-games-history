@@ -3,6 +3,10 @@ import * as path from "path";
 import * as cdk from "aws-cdk-lib";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -19,41 +23,151 @@ export class ChessStatsStack extends cdk.Stack {
 
     const { envName } = props;
     const prefix = `chess-stats-${envName}`;
+    const removalPolicy =
+      envName === "dev" ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN;
+    const autoDelete = envName === "dev";
 
-    // ── S3 bucket (private; only CloudFront via OAC can read it) ─────────────
+    // ── Static site bucket ───────────────────────────────────────────────────
 
     const siteBucket = new s3.Bucket(this, "SiteBucket", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
-      // Destroy dev buckets automatically; retain prod buckets on stack deletion
-      removalPolicy:
-        envName === "dev" ? cdk.RemovalPolicy.DESTROY : cdk.RemovalPolicy.RETAIN,
-      autoDeleteObjects: envName === "dev",
+      removalPolicy,
+      autoDeleteObjects: autoDelete,
     });
 
-    // ── Lambda API (no VPC — public egress to Chess.com / Lichess) ───────────
+    // ── Cache bucket (game shards) ───────────────────────────────────────────
+
+    const cacheBucket = new s3.Bucket(this, "CacheBucket", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      removalPolicy,
+      autoDeleteObjects: autoDelete,
+      // Backstop in case the cleanup Lambda misses entries.
+      lifecycleRules: [
+        {
+          id: "cache-ttl-backstop",
+          expiration: cdk.Duration.days(45),
+        },
+      ],
+    });
+
+    // ── Cache metadata table ─────────────────────────────────────────────────
+
+    const cacheTable = new dynamodb.Table(this, "CacheTable", {
+      tableName: `${prefix}-cache-meta`,
+      partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy,
+    });
+
+    // ── Common Lambda bundling config ────────────────────────────────────────
+
+    const commonBundling: nodejs.BundlingOptions = {
+      minify: true,
+      sourceMap: false,
+      target: "node20",
+      tsconfig: path.join(__dirname, "../../tsconfig.lambda.json"),
+      // AWS SDK clients live in the Node 20 runtime; chess.js gets bundled.
+      externalModules: ["@aws-sdk/*"],
+    };
+
+    // Pin the deps lockfile to the repo root so CDK mounts the whole project
+    // into the esbuild Docker container. Without this, CDK picks
+    // infra/package-lock.json as the root and can't see src/lambda or
+    // tsconfig.lambda.json.
+    const repoLockFile = path.join(__dirname, "../../package-lock.json");
+
+    // ── Ingest worker Lambda (long timeout, self-invokes) ────────────────────
+
+    // Pre-compute the worker's name + ARN as static strings so we can grant
+    // self-invoke permission without creating a CFN dependency from the
+    // worker's role policy back to the worker itself (which would cycle).
+    const workerFunctionName = `${prefix}-ingest-worker`;
+    const workerFunctionArn = cdk.Stack.of(this).formatArn({
+      service: "lambda",
+      resource: "function",
+      resourceName: workerFunctionName,
+      arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+    });
+
+    const workerFunction = new nodejs.NodejsFunction(this, "IngestWorker", {
+      functionName: workerFunctionName,
+      entry: path.join(__dirname, "../../src/lambda/ingest-worker.ts"),
+      depsLockFilePath: repoLockFile,
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 512,
+      bundling: commonBundling,
+      environment: {
+        CACHE_BUCKET: cacheBucket.bucketName,
+        CACHE_TABLE: cacheTable.tableName,
+        WORKER_FUNCTION_NAME: workerFunctionName,
+        MAX_GAMES_PER_USER: "50000",
+      },
+    });
+
+    cacheBucket.grantReadWrite(workerFunction);
+    cacheTable.grantReadWriteData(workerFunction);
+    workerFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [workerFunctionArn],
+      })
+    );
+
+    // ── Cache API Lambda (synchronous reads + worker kickoff) ────────────────
+
+    const cacheFunction = new nodejs.NodejsFunction(this, "CacheApiFunction", {
+      functionName: `${prefix}-cache-api`,
+      entry: path.join(__dirname, "../../src/lambda/cache-handler.ts"),
+      depsLockFilePath: repoLockFile,
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      bundling: commonBundling,
+      environment: {
+        CACHE_BUCKET: cacheBucket.bucketName,
+        CACHE_TABLE: cacheTable.tableName,
+        WORKER_FUNCTION_NAME: workerFunctionName,
+      },
+    });
+
+    cacheBucket.grantRead(cacheFunction);
+    cacheBucket.grantDelete(cacheFunction);
+    cacheTable.grantReadWriteData(cacheFunction);
+    cacheFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [workerFunctionArn],
+      })
+    );
+
+    const cacheFnUrl = cacheFunction.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: {
+        allowedOrigins: ["*"],
+        allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
+        allowedHeaders: ["*"],
+      },
+    });
+    const cacheFnUrlDomain = cdk.Fn.select(2, cdk.Fn.split("/", cacheFnUrl.url));
+
+    // ── Legacy direct-fetch API (kept for backwards compatibility) ───────────
 
     const apiFunction = new nodejs.NodejsFunction(this, "ApiFunction", {
       functionName: `${prefix}-api`,
-      // Entry is the Lambda handler; esbuild bundles all transitive imports
       entry: path.join(__dirname, "../../src/lambda/games-handler.ts"),
+      depsLockFilePath: repoLockFile,
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
-      // No vpc property → Lambda uses public internet by default (no NAT Gateway)
-      bundling: {
-        minify: true,
-        sourceMap: false,
-        target: "node20",
-        // Point esbuild at the lambda-specific tsconfig so it can resolve @/ path aliases
-        tsconfig: path.join(__dirname, "../../tsconfig.lambda.json"),
-        // chess.js and all other non-AWS deps are bundled (Lambda doesn't provide them)
-        externalModules: ["@aws-sdk/*"],
-      },
+      bundling: commonBundling,
     });
 
-    // Lambda Function URL — no IAM auth; CloudFront is the public entry point
     const fnUrl = apiFunction.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       cors: {
@@ -62,16 +176,39 @@ export class ChessStatsStack extends cdk.Stack {
         allowedHeaders: ["*"],
       },
     });
-
-    // Extract the bare domain from https://<domain>/ for use as a CloudFront origin
     const fnUrlDomain = cdk.Fn.select(2, cdk.Fn.split("/", fnUrl.url));
+
+    // ── Cleanup Lambda (nightly TTL + capacity sweep) ────────────────────────
+
+    const cleanupFunction = new nodejs.NodejsFunction(this, "CleanupFunction", {
+      functionName: `${prefix}-cleanup`,
+      entry: path.join(__dirname, "../../src/lambda/cleanup-handler.ts"),
+      depsLockFilePath: repoLockFile,
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_20_X,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 256,
+      bundling: commonBundling,
+      environment: {
+        CACHE_BUCKET: cacheBucket.bucketName,
+        CACHE_TABLE: cacheTable.tableName,
+        CACHE_TTL_DAYS: "30",
+        MAX_TOTAL_GAMES: "5000000",
+      },
+    });
+
+    cacheBucket.grantReadWrite(cleanupFunction);
+    cacheBucket.grantDelete(cleanupFunction);
+    cacheTable.grantReadWriteData(cleanupFunction);
+
+    new events.Rule(this, "CleanupSchedule", {
+      ruleName: `${prefix}-cleanup-daily`,
+      schedule: events.Schedule.cron({ minute: "0", hour: "4" }),
+      targets: [new targets.LambdaFunction(cleanupFunction)],
+    });
 
     // ── CloudFront ────────────────────────────────────────────────────────────
 
-    // Rewrite extensionless paths to /index.html so that direct loads of Next.js
-    // routes (e.g. /games) resolve to the correct static file in S3.
-    // Without this, S3 returns 403 for /games because the object is stored at
-    // games/index.html, not games.
     const rewriteFn = new cloudfront.Function(this, "RewriteIndexHtml", {
       functionName: `${prefix}-rewrite-index`,
       code: cloudfront.FunctionCode.fromInline(
@@ -90,25 +227,23 @@ export class ChessStatsStack extends cdk.Stack {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
     });
 
-    // S3 origin with Origin Access Control (OAC) — more secure than legacy OAI
     const s3Origin = origins.S3BucketOrigin.withOriginAccessControl(siteBucket);
 
-    // Lambda Function URL origin; ALL_VIEWER_EXCEPT_HOST_HEADER forwards query
-    // strings and headers but replaces Host with the Lambda URL domain
     const apiOrigin = new origins.HttpOrigin(fnUrlDomain, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-      // Default is 30s; Lambda allows 60s — without this, CloudFront returns 504 first.
       readTimeout: cdk.Duration.seconds(60),
+    });
+
+    const cacheApiOrigin = new origins.HttpOrigin(cacheFnUrlDomain, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      readTimeout: cdk.Duration.seconds(30),
     });
 
     const distribution = new cloudfront.Distribution(this, "Distribution", {
       comment: `${prefix}`,
-      // Serve index.html for the root path
       defaultRootObject: "index.html",
-      // PriceClass_100 = US + Europe + Asia — cheapest tier
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
 
-      // Default behaviour: static assets from S3
       defaultBehavior: {
         origin: s3Origin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -123,19 +258,25 @@ export class ChessStatsStack extends cdk.Stack {
       },
 
       additionalBehaviors: {
-        // /api/* routed to Lambda Function URL; query strings forwarded, no caching
+        // Cache API takes precedence (more specific).
+        "/api/cache*": {
+          origin: cacheApiOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy:
+            cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        },
         "/api/*": {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          // Forward all query strings + headers (except Host) to Lambda
           originRequestPolicy:
             cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
 
-      // SPA routing: unknown paths serve index.html so the client router takes over
       errorResponses: [
         {
           httpStatus: 403,
@@ -152,33 +293,41 @@ export class ChessStatsStack extends cdk.Stack {
       ],
     });
 
-    // ── Deploy static Next.js export to S3, invalidate CloudFront ────────────
+    // ── Deploy static site ───────────────────────────────────────────────────
 
     new s3deploy.BucketDeployment(this, "SiteDeploy", {
       sources: [s3deploy.Source.asset(path.join(__dirname, "../../out"))],
       destinationBucket: siteBucket,
-      // Invalidate the whole distribution after upload so stale assets are purged
       distribution,
       distributionPaths: ["/*"],
-      // Run the deployment Lambda in the same region
       memoryLimit: 512,
     });
 
-    // ── Outputs ───────────────────────────────────────────────────────────────
+    // ── Outputs ──────────────────────────────────────────────────────────────
 
     new cdk.CfnOutput(this, "SiteUrl", {
       value: `https://${distribution.distributionDomainName}`,
       description: "CloudFront URL for the app",
     });
-
     new cdk.CfnOutput(this, "LambdaUrl", {
       value: fnUrl.url,
-      description: "Raw Lambda Function URL (normally accessed via CloudFront /api/*)",
+      description: "Raw direct-fetch Lambda Function URL",
     });
-
+    new cdk.CfnOutput(this, "CacheLambdaUrl", {
+      value: cacheFnUrl.url,
+      description: "Raw cache Lambda Function URL",
+    });
     new cdk.CfnOutput(this, "S3Bucket", {
       value: siteBucket.bucketName,
       description: "S3 bucket holding the static site",
+    });
+    new cdk.CfnOutput(this, "CacheBucketName", {
+      value: cacheBucket.bucketName,
+      description: "S3 bucket holding game cache shards",
+    });
+    new cdk.CfnOutput(this, "CacheTableName", {
+      value: cacheTable.tableName,
+      description: "DynamoDB table holding cache metadata",
     });
   }
 }
