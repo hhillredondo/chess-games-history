@@ -50,6 +50,9 @@ export interface CheckmateStats {
   /** Checkmates where the delivering piece could not be determined. */
   unknownGiven: number;
   unknownReceived: number;
+  /** Full move count (plyCount / 2) for each checkmate given/received. */
+  moveCountsGiven: number[];
+  moveCountsReceived: number[];
 }
 
 /** Material difference from the user's perspective at the given FEN. */
@@ -130,6 +133,8 @@ export function computeCheckmateStats(games: UnifiedGame[]): CheckmateStats {
   let totalReceived = 0;
   let unknownGiven = 0;
   let unknownReceived = 0;
+  const moveCountsGiven: number[] = [];
+  const moveCountsReceived: number[] = [];
 
   for (const g of games) {
     try {
@@ -140,8 +145,11 @@ export function computeCheckmateStats(games: UnifiedGame[]): CheckmateStats {
       const matedColor = c.turn() === "w" ? "white" : "black";
       const userGave = matedColor !== g.userColor;
 
+      const fullMoves = Math.ceil(g.plyCount / 2);
+
       if (userGave) {
         totalGiven++;
+        moveCountsGiven.push(fullMoves);
         const piece = lastMovePiece(g.pgn);
         if (piece) {
           givenMap.set(piece, (givenMap.get(piece) ?? 0) + 1);
@@ -152,6 +160,7 @@ export function computeCheckmateStats(games: UnifiedGame[]): CheckmateStats {
         if (bkt) matGiven[bkt]++;
       } else {
         totalReceived++;
+        moveCountsReceived.push(fullMoves);
         const piece = lastMovePiece(g.pgn);
         if (piece) {
           receivedMap.set(piece, (receivedMap.get(piece) ?? 0) + 1);
@@ -188,5 +197,7 @@ export function computeCheckmateStats(games: UnifiedGame[]): CheckmateStats {
     totalReceived,
     unknownGiven,
     unknownReceived,
+    moveCountsGiven,
+    moveCountsReceived,
   };
 }

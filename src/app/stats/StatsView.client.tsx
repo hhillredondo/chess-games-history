@@ -7,6 +7,7 @@ import CollapsibleSection from "@/app/_components/composed/CollapsibleSection/Co
 import ExplainerModal from "@/app/_components/composed/ExplainerModal/ExplainerModal.client";
 import { fenForOpening } from "@/lib/openings/classify";
 import { computeClockStats } from "@/lib/analytics/clock-stats";
+import { computeGameInsights } from "@/lib/analytics/game-insights";
 import { aggregateOpenings } from "@/lib/analytics/openings";
 import { extractRatingHistory } from "@/lib/analytics/ratings";
 import { clusterSessions } from "@/lib/analytics/sessions";
@@ -53,7 +54,7 @@ export default function StatsView({
   const [gapMinutes, setGapMinutes] = useState(30);
   const [openingTab, setOpeningTab] = useState<"white" | "black">("white");
   const [showAllOpenings, setShowAllOpenings] = useState(false);
-  type OpeningSortKey = "games" | "winRate" | "wins" | "draws" | "losses";
+  type OpeningSortKey = "games" | "winRate" | "wins" | "draws" | "losses" | "avgMoves";
   const [openingSort, setOpeningSort] = useState<{ key: OpeningSortKey; dir: "desc" | "asc" }>({ key: "games", dir: "desc" });
   const [openingModal, setOpeningModal] = useState<{
     title: string;
@@ -79,6 +80,7 @@ export default function StatsView({
   const terminationStats = useMemo(() => computeTerminationStats(games), [games]);
   const timeOfDayStats = useMemo(() => computeTimeOfDayStats(games), [games]);
   const clockStats = useMemo(() => computeClockStats(games), [games]);
+  const gameInsights = useMemo(() => computeGameInsights(games), [games]);
 
   const dateRange = useMemo(() => {
     if (games.length === 0) return null;
@@ -142,6 +144,7 @@ export default function StatsView({
         if (openingSort.key === "winRate") return x.winRate;
         if (openingSort.key === "wins") return x.wins;
         if (openingSort.key === "draws") return x.draws;
+        if (openingSort.key === "avgMoves") return x.avgMoves;
         return x.losses;
       };
       return openingSort.dir === "desc" ? v(b) - v(a) : v(a) - v(b);
@@ -199,6 +202,19 @@ export default function StatsView({
           <span>
             {dateRange.min.toLocaleDateString()} –{" "}
             {dateRange.max.toLocaleDateString()}
+          </span>
+        )}
+        {games.length > 0 && (
+          <span>Avg {gameInsights.avgMovesPerGame.toFixed(1)} moves/game</span>
+        )}
+        {gameInsights.longestBreak && gameInsights.longestBreak.days >= 1 && (
+          <span>
+            Longest break:{" "}
+            {gameInsights.longestBreak.days >= 60
+              ? `${(gameInsights.longestBreak.days / 30).toFixed(1)} months`
+              : `${Math.round(gameInsights.longestBreak.days)} days`}{" "}
+            ({gameInsights.longestBreak.from.toLocaleDateString()} –{" "}
+            {gameInsights.longestBreak.to.toLocaleDateString()})
           </span>
         )}
         {errors.chesscom && (
@@ -569,6 +585,7 @@ export default function StatsView({
                       [
                         { key: "games" as OpeningSortKey, label: "Games" },
                         { key: "winRate" as OpeningSortKey, label: "Win%" },
+                        { key: "avgMoves" as OpeningSortKey, label: "Avg Moves" },
                         { key: "wins" as OpeningSortKey, label: "W" },
                         { key: "draws" as OpeningSortKey, label: "D" },
                         { key: "losses" as OpeningSortKey, label: "L" },
@@ -626,6 +643,9 @@ export default function StatsView({
                       </td>
                       <td className="text-right py-2 px-2 font-mono tabular-nums">
                         {Math.round(e.winRate * 100)}%
+                      </td>
+                      <td className="text-right py-2 px-2 font-mono tabular-nums">
+                        {e.avgMoves}
                       </td>
                       <td className="text-right py-2 px-2 font-mono tabular-nums">
                         {e.wins}
@@ -741,6 +761,121 @@ export default function StatsView({
           }
         >
           <TerminationChart rows={terminationStats} />
+
+          {/* Resign & Draw material breakdown */}
+          {(gameInsights.resignMaterial.total > 0 || gameInsights.drawMaterial.total > 0) && (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 mt-2">
+              {gameInsights.resignMaterial.total > 0 && (() => {
+                const rm = gameInsights.resignMaterial;
+                const pct = (n: number) => rm.total > 0 ? Math.round((n / rm.total) * 100) : 0;
+                return (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm font-medium">
+                      Material at resignation{" "}
+                      <span className="opacity-55 font-normal">({rm.total} games)</span>
+                    </p>
+                    <div className="flex h-5 w-full overflow-hidden rounded-md">
+                      {rm.ahead > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(rm.ahead)}%`, background: "#4caf72" }}
+                        >
+                          {pct(rm.ahead)}%
+                        </div>
+                      )}
+                      {rm.equal > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(rm.equal)}%`, background: "#6b7280" }}
+                        >
+                          {pct(rm.equal)}%
+                        </div>
+                      )}
+                      {rm.behind > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(rm.behind)}%`, background: "#d45555" }}
+                        >
+                          {pct(rm.behind)}%
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#4caf72" }} />
+                        Ahead {rm.ahead} ({pct(rm.ahead)}%)
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#6b7280" }} />
+                        Equal {rm.equal} ({pct(rm.equal)}%)
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#d45555" }} />
+                        Behind {rm.behind} ({pct(rm.behind)}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {gameInsights.drawMaterial.total > 0 && (() => {
+                const dm = gameInsights.drawMaterial;
+                const pct = (n: number) => dm.total > 0 ? Math.round((n / dm.total) * 100) : 0;
+                return (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm font-medium">
+                      Material at draw{" "}
+                      <span className="opacity-55 font-normal">({dm.total} games)</span>
+                    </p>
+                    <div className="flex h-5 w-full overflow-hidden rounded-md">
+                      {dm.ahead > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(dm.ahead)}%`, background: "#4caf72" }}
+                        >
+                          {pct(dm.ahead)}%
+                        </div>
+                      )}
+                      {dm.equal > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(dm.equal)}%`, background: "#6b7280" }}
+                        >
+                          {pct(dm.equal)}%
+                        </div>
+                      )}
+                      {dm.behind > 0 && (
+                        <div
+                          className="flex items-center justify-center text-[10px] font-mono text-white"
+                          style={{ width: `${pct(dm.behind)}%`, background: "#d45555" }}
+                        >
+                          {pct(dm.behind)}%
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#4caf72" }} />
+                        Ahead {dm.ahead} ({pct(dm.ahead)}%)
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#6b7280" }} />
+                        Equal {dm.equal} ({pct(dm.equal)}%)
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#d45555" }} />
+                        Behind {dm.behind} ({pct(dm.behind)}%)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+          {(gameInsights.resignMaterial.total > 0 || gameInsights.drawMaterial.total > 0) && (
+            <p className="text-[11px] opacity-50 mt-1">
+              Material balance uses simple piece values (Q=9 R=5 B=3 N=3 P=1) from the final position, from your perspective.
+            </p>
+          )}
         </CollapsibleSection>
       )}
 

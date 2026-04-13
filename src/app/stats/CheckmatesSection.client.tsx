@@ -191,6 +191,189 @@ export default function CheckmatesSection({
         )}
       </div>
 
+      {/* Checkmate move count distribution */}
+      {(stats.moveCountsGiven.length > 0 || stats.moveCountsReceived.length > 0) && (() => {
+        // Bucket move counts into ranges for the histogram
+        const bucketize = (counts: number[]) => {
+          const buckets: { label: string; min: number; max: number; count: number }[] = [
+            { label: "1–10", min: 1, max: 10, count: 0 },
+            { label: "11–20", min: 11, max: 20, count: 0 },
+            { label: "21–30", min: 21, max: 30, count: 0 },
+            { label: "31–40", min: 31, max: 40, count: 0 },
+            { label: "41–50", min: 41, max: 50, count: 0 },
+            { label: "51–60", min: 51, max: 60, count: 0 },
+            { label: "61+", min: 61, max: Infinity, count: 0 },
+          ];
+          for (const m of counts) {
+            const b = buckets.find((b) => m >= b.min && m <= b.max);
+            if (b) b.count++;
+          }
+          return buckets;
+        };
+
+        const givenBuckets = bucketize(stats.moveCountsGiven);
+        const receivedBuckets = bucketize(stats.moveCountsReceived);
+        const allBuckets = givenBuckets.map((b, i) => ({
+          label: b.label,
+          given: b.count,
+          received: receivedBuckets[i]!.count,
+        })).filter((b) => b.given > 0 || b.received > 0);
+
+        if (allBuckets.length === 0) return null;
+
+        const maxCount = Math.max(...allBuckets.flatMap((b) => [b.given, b.received]), 1);
+        const W = 700, H = 280;
+        const P = { top: 16, right: 16, bottom: 44, left: 44 };
+        const plotW = W - P.left - P.right;
+        const plotH = H - P.top - P.bottom;
+        const barCount = allBuckets.length;
+        const slotW = plotW / barCount;
+        const barW = slotW * 0.35;
+        const yTickCount = 4;
+        const yTickStep = Math.ceil(maxCount / yTickCount) || 1;
+        const yAxisMax = yTickStep * yTickCount;
+        const yTicks = Array.from({ length: yTickCount + 1 }, (_, i) => i * yTickStep);
+        const sy = (v: number) => P.top + (1 - v / yAxisMax) * plotH;
+
+        return (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-medium">Checkmate move count</p>
+            <svg
+              viewBox={`0 0 ${W} ${H}`}
+              className="w-full"
+              style={{ maxHeight: H }}
+              aria-label="Checkmate move count distribution"
+            >
+              {/* Y gridlines + labels */}
+              {yTicks.map((v) => (
+                <g key={v}>
+                  <line
+                    x1={P.left} y1={sy(v)}
+                    x2={W - P.right} y2={sy(v)}
+                    stroke="currentColor"
+                    strokeOpacity={v === 0 ? 0.25 : 0.1}
+                    strokeWidth={1}
+                    strokeDasharray={v === 0 ? undefined : "3 3"}
+                  />
+                  <text
+                    x={P.left - 6}
+                    y={sy(v) + 4}
+                    textAnchor="end"
+                    fontSize={10}
+                    fill="currentColor"
+                    opacity={0.6}
+                  >
+                    {v}
+                  </text>
+                </g>
+              ))}
+
+              {/* Axes */}
+              <line
+                x1={P.left} y1={P.top}
+                x2={P.left} y2={H - P.bottom}
+                stroke="currentColor" strokeOpacity={0.3} strokeWidth={1}
+              />
+              <line
+                x1={P.left} y1={H - P.bottom}
+                x2={W - P.right} y2={H - P.bottom}
+                stroke="currentColor" strokeOpacity={0.3} strokeWidth={1}
+              />
+
+              {/* Bars */}
+              {allBuckets.map((b, i) => {
+                const cx = P.left + i * slotW + slotW / 2;
+                return (
+                  <g key={b.label}>
+                    {/* Given bar (left) */}
+                    {b.given > 0 && (
+                      <rect
+                        x={cx - barW - 1}
+                        y={sy(b.given)}
+                        width={barW}
+                        height={H - P.bottom - sy(b.given)}
+                        fill="#4caf72"
+                        opacity={0.7}
+                        rx={2}
+                      />
+                    )}
+                    {b.given > 0 && (
+                      <text
+                        x={cx - barW / 2 - 1}
+                        y={sy(b.given) - 3}
+                        textAnchor="middle"
+                        fontSize={9}
+                        fill="#4caf72"
+                        opacity={0.9}
+                      >
+                        {b.given}
+                      </text>
+                    )}
+                    {/* Received bar (right) */}
+                    {b.received > 0 && (
+                      <rect
+                        x={cx + 1}
+                        y={sy(b.received)}
+                        width={barW}
+                        height={H - P.bottom - sy(b.received)}
+                        fill="#d45555"
+                        opacity={0.7}
+                        rx={2}
+                      />
+                    )}
+                    {b.received > 0 && (
+                      <text
+                        x={cx + barW / 2 + 1}
+                        y={sy(b.received) - 3}
+                        textAnchor="middle"
+                        fontSize={9}
+                        fill="#d45555"
+                        opacity={0.9}
+                      >
+                        {b.received}
+                      </text>
+                    )}
+                    {/* X label */}
+                    <text
+                      x={cx}
+                      y={H - P.bottom + 14}
+                      textAnchor="middle"
+                      fontSize={10}
+                      fill="currentColor"
+                      opacity={0.7}
+                    >
+                      {b.label}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* X axis label */}
+              <text
+                x={P.left + plotW / 2}
+                y={H - 2}
+                textAnchor="middle"
+                fontSize={10}
+                fill="currentColor"
+                opacity={0.5}
+              >
+                Moves to checkmate
+              </text>
+            </svg>
+            <div className="flex gap-4 text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#4caf72", opacity: 0.7 }} />
+                Given ({stats.moveCountsGiven.length})
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#d45555", opacity: 0.7 }} />
+                Received ({stats.moveCountsReceived.length})
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Material balance at checkmate */}
       {(matSlicesGiven.length > 0 || matSlicesReceived.length > 0) && (
         <div className="flex flex-col gap-3">

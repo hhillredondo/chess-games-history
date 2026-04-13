@@ -9,6 +9,7 @@ export interface OpeningEntry {
   losses: number;
   draws: number;
   winRate: number;
+  avgMoves: number;
 }
 
 export interface OpeningStats {
@@ -21,7 +22,7 @@ export function aggregateOpenings(
   minGames = 3
 ): OpeningStats {
   function build(color: "white" | "black"): OpeningEntry[] {
-    const map = new Map<string, OpeningEntry>();
+    const map = new Map<string, OpeningEntry & { _totalPly: number }>();
     for (const g of games) {
       if (g.userColor !== color) continue;
       const eco = g.opening?.eco;
@@ -37,17 +38,24 @@ export function aggregateOpenings(
           losses: 0,
           draws: 0,
           winRate: 0,
+          avgMoves: 0,
+          _totalPly: 0,
         });
       }
       const e = map.get(key)!;
       e.games++;
+      e._totalPly += g.plyCount;
       if (g.result === "win") e.wins++;
       else if (g.result === "loss") e.losses++;
       else if (g.result === "draw") e.draws++;
     }
     return [...map.values()]
       .filter((e) => e.games >= minGames)
-      .map((e) => ({ ...e, winRate: e.wins / e.games }))
+      .map(({ _totalPly, ...e }) => ({
+        ...e,
+        winRate: e.wins / e.games,
+        avgMoves: Math.round(_totalPly / e.games / 2),
+      }))
       .sort((a, b) => b.games - a.games);
   }
 

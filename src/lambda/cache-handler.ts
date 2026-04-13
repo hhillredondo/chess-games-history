@@ -93,7 +93,11 @@ async function handlePlatform(
   }
 
   if (meta.status === "error") {
-    return { meta, manifest: null, startedJob: false };
+    // Auto-recover: clear the error and restart the worker so the user
+    // doesn't get stuck in a permanent error state after a transient failure.
+    await putMeta(withStatus(meta, "ingesting", { error: undefined }));
+    await startWorker(platform, username, false);
+    return { meta: { ...meta, status: "ingesting", error: undefined }, manifest: null, startedJob: true };
   }
 
   const manifest = await readManifest(platform, username);

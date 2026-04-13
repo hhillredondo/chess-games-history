@@ -93,6 +93,14 @@ function mapRow(row: LichessNdjsonGame, user: string): UnifiedGame | null {
   };
 }
 
+const RETRY_STATUS_CODES = new Set([429, 502, 503, 504]);
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2_000;
+
+async function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Fetch up to `limit` games. Pass `until` (ms) from a previous `nextUntil` to
  * get older games. Pass `since` (ms) to stop once all games are older than
@@ -131,21 +139,31 @@ export async function fetchLichessGamesPage(
       url.searchParams.set("since", String(since));
     }
 
-    const res = await fetch(url, {
-      headers: publicApiHeaders({
-        Accept: "application/x-ndjson",
-      }),
-      cache: "no-store",
-    });
+    let res: Response | null = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      res = await fetch(url, {
+        headers: publicApiHeaders({
+          Accept: "application/x-ndjson",
+        }),
+        cache: "no-store",
+      });
 
-    if (res.status === 404) {
-      return { games: out, nextUntil: null };
-    }
-    if (!res.ok) {
+      if (res.status === 404) {
+        return { games: out, nextUntil: null };
+      }
+
+      if (res.ok) break;
+
+      if (RETRY_STATUS_CODES.has(res.status) && attempt < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * 2 ** attempt;
+        await sleepMs(delay);
+        continue;
+      }
+
       throw new Error(`Lichess games HTTP ${res.status}`);
     }
 
-    const text = await res.text();
+    const text = await res!.text();
     const lines = text
       .split("\n")
       .map((l) => l.trim())
