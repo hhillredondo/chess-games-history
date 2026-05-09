@@ -11,6 +11,11 @@
     "build:export": "NEXT_EXPORT=1 next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "TZ=UTC vitest run",
+    "test:unit:watch": "TZ=UTC vitest",
+    "test:e2e": "playwright test",
+    "test:health": "playwright test --config=playwright.health.config.ts",
     "deploy:dev": "bash scripts/deploy.sh dev",
     "deploy:prod": "bash scripts/deploy.sh prod",
     "cdk:bootstrap": "cd infra && npm install --prefer-offline --silent && npx cdk bootstrap"
@@ -29,6 +34,7 @@
     "@aws-sdk/client-lambda": "^3.658.0",
     "@aws-sdk/client-s3": "^3.658.0",
     "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@playwright/test": "^1.49.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.8",
@@ -37,6 +43,7 @@
     "eslint-config-next": "^16.2.2",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
   }
 }

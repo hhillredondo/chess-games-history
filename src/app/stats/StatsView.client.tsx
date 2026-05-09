@@ -130,15 +130,10 @@ export default function StatsView({
     [sessionsWithElo]
   );
 
-  if (games.length === 0) {
-    return <p className="p-8 text-center opacity-70">No games loaded.</p>;
-  }
-
-  const openingEntriesRaw =
-    openingTab === "white" ? openingStats.asWhite : openingStats.asBlack;
-
   const openingEntries = useMemo(() => {
-    const sorted = [...openingEntriesRaw].sort((a, b) => {
+    const raw =
+      openingTab === "white" ? openingStats.asWhite : openingStats.asBlack;
+    const sorted = [...raw].sort((a, b) => {
       const v = (x: typeof a) => {
         if (openingSort.key === "games") return x.games;
         if (openingSort.key === "winRate") return x.winRate;
@@ -150,7 +145,11 @@ export default function StatsView({
       return openingSort.dir === "desc" ? v(b) - v(a) : v(a) - v(b);
     });
     return sorted;
-  }, [openingEntriesRaw, openingSort]);
+  }, [openingTab, openingStats, openingSort]);
+
+  if (games.length === 0) {
+    return <p className="p-8 text-center opacity-70">No games loaded.</p>;
+  }
 
   return (
     <div className="flex flex-col gap-12">
