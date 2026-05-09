@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -145,14 +143,12 @@ export default function FilterPanel({
 
   // Hydrate collapsed state from localStorage (one-shot on mount).
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const stored = window.localStorage.getItem(lsKey);
       if (stored === "0") setOpen(false);
       else if (stored === "1") setOpen(true);
     } catch { /* ignore */ }
     setHydrated(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, [lsKey]);
 
   // Persist collapsed state.

@@ -1,5 +1,3 @@
-"use client";
-
 import { useDeferredValue, useMemo } from "react";
 
 import { computeCheckmateStats, PIECE_LABELS } from "@/lib/analytics/checkmates";

@@ -1,5 +1,3 @@
-"use client";
-
 import { chessFromFen } from "@/app/core/fenInterpreter";
 import ChessBoardSquare from "../../atomic/ChessBoardSquare/ChessBoardSquare";
 

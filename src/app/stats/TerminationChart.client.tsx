@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import type { TerminationRow } from "@/lib/analytics/termination-stats";
 

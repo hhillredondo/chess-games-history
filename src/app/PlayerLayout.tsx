@@ -1,10 +1,9 @@
 import { Suspense } from "react";
+import { Outlet } from "react-router-dom";
 
 import PlayerGamesProvider from "./PlayerGamesProvider.client";
 
-export default function PlayerLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function PlayerLayout() {
   return (
     <Suspense
       fallback={
@@ -13,7 +12,9 @@ export default function PlayerLayout({
         </div>
       }
     >
-      <PlayerGamesProvider>{children}</PlayerGamesProvider>
+      <PlayerGamesProvider>
+        <Outlet />
+      </PlayerGamesProvider>
     </Suspense>
   );
 }

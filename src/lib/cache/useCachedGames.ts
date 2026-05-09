@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 
 import type { ChessComCursor } from "@/lib/fetch/chesscom";
@@ -263,12 +261,10 @@ export function useCachedGames(
       }));
     };
 
-    /* eslint-disable react-hooks/set-state-in-effect -- resetting per-platform state on username change */
     if (cc) setCcState({ ...EMPTY_STATE, status: "ingesting" });
     else setCcState({ ...EMPTY_STATE, done: true });
     if (li) setLiState({ ...EMPTY_STATE, status: "ingesting" });
     else setLiState({ ...EMPTY_STATE, done: true });
-    /* eslint-enable react-hooks/set-state-in-effect */
 
     const action = actionOverride ?? "read";
 
@@ -279,7 +275,6 @@ export function useCachedGames(
       } catch (e) {
         if (ac.signal.aborted) return;
         // Manifest endpoint failed entirely (not deployed) — skip to direct fetch.
-        // eslint-disable-next-line no-console
         console.warn("[useCachedGames] manifest fetch failed, falling back to direct fetch", e);
       }
 

@@ -1,7 +1,3 @@
-"use client";
-
-import Link from "next/link";
-
 import ThemeSwitcher from "../ThemeSwitcher/ThemeSwitcher.client";
 
 export default function Header() {

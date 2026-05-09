@@ -355,7 +355,7 @@ export class ChessStatsStack extends cdk.Stack {
     // ── Deploy static site ───────────────────────────────────────────────────
 
     new s3deploy.BucketDeployment(this, "SiteDeploy", {
-      sources: [s3deploy.Source.asset(path.join(__dirname, "../../out"))],
+      sources: [s3deploy.Source.asset(path.join(__dirname, "../../dist"))],
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ["/*"],

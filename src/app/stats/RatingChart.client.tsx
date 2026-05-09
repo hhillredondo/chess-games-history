@@ -1,5 +1,3 @@
-"use client";
-
 import type { RatingPoint } from "@/lib/analytics/ratings";
 
 const PLATFORM_COLORS: Record<string, string> = {

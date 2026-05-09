@@ -1,7 +1,4 @@
-"use client";
-
 import { useVirtualizer } from "@tanstack/react-virtual";
-import Link from "next/link";
 import {
   useDeferredValue,
   useMemo,
@@ -9,6 +6,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { Link } from "react-router-dom";
 
 import FetchActions from "@/app/_components/composed/FetchActions/FetchActions.client";
 import FilterPanel from "@/app/_components/composed/FilterPanel/FilterPanel.client";
@@ -218,7 +216,7 @@ export default function GamesList() {
     return (
       <div className="p-8 text-center max-w-lg mx-auto">
         <p className="mb-4">No usernames in the URL.</p>
-        <Link href="/" className="underline">
+        <Link to="/" className="underline">
           Back to search
         </Link>
       </div>

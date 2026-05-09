@@ -1,5 +1,3 @@
-"use client";
-
 import { formatClockMs, type QuickStats } from "@/lib/analytics/quick-stats";
 
 interface QuickStatsBarProps {

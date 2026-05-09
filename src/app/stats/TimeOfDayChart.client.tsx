@@ -1,5 +1,3 @@
-"use client";
-
 import type { TimeOfDayRow } from "@/lib/analytics/time-of-day";
 
 const W = 720;

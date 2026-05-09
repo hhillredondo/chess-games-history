@@ -1,12 +1,10 @@
-"use client";
-
-import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import Button from "../../atomic/Button/Button";
 
 export default function SearchForm() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [chesscom, setChesscom] = useState("");
   const [lichess, setLichess] = useState("");
   const [sameUsername, setSameUsername] = useState(true);
@@ -44,9 +42,9 @@ export default function SearchForm() {
       const li = sameUsername ? chesscom.trim() : lichess.trim();
       if (li) params.set("lichess", li);
       const q = params.toString();
-      router.push(q ? `/stats?${q}` : "/stats");
+      navigate(q ? `/stats?${q}` : "/stats");
     },
-    [chesscom, lichess, sameUsername, router]
+    [chesscom, lichess, sameUsername, navigate]
   );
 
   return (

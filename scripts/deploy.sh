@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/deploy.sh [dev|prod]
-# Builds the Next.js static export then deploys the CDK stack.
+# Builds the Vite app then deploys the CDK stack.
 set -euo pipefail
 
 ENV="${1:-dev}"
@@ -11,9 +11,9 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "▶ Building Next.js static export..."
+echo "▶ Building Vite app..."
 cd "$REPO_ROOT"
-npm run build:export
+npm run build
 
 echo "▶ Installing infra dependencies..."
 cd "$REPO_ROOT/infra"

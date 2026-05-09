@@ -1,5 +1,3 @@
-"use client";
-
 import { useTheme } from "@/contexts/ThemeContext";
 import Dropdown from "../../atomic/Dropdown/Dropdown";
 

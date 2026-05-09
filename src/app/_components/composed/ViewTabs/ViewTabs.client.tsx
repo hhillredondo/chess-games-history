@@ -1,7 +1,4 @@
-"use client";
-
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { Link, useSearchParams } from "react-router-dom";
 
 type View = "analytics" | "games" | "coach";
 
@@ -16,7 +13,7 @@ const TABS: { id: View; label: string; href: string }[] = [
 ];
 
 export default function ViewTabs({ current }: Readonly<ViewTabsProps>) {
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const chesscom = searchParams.get("chesscom")?.trim() ?? "";
   const lichess = searchParams.get("lichess")?.trim() ?? "";
 
@@ -28,7 +25,7 @@ export default function ViewTabs({ current }: Readonly<ViewTabsProps>) {
   return (
     <div className="flex flex-col gap-2">
       <Link
-        href="/"
+        to="/"
         className="font-mono text-sm opacity-60 hover:opacity-100 transition-opacity w-fit"
       >
         ← Search
@@ -44,7 +41,7 @@ export default function ViewTabs({ current }: Readonly<ViewTabsProps>) {
           return (
             <Link
               key={tab.id}
-              href={href}
+              to={href}
               role="tab"
               aria-selected={active}
               className={`flex-1 rounded-lg px-4 py-2 text-center font-mono text-sm transition-colors ${

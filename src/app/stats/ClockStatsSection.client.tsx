@@ -1,5 +1,3 @@
-"use client";
-
 import type { ClockStats, TimeoutMaterialCounts } from "@/lib/analytics/clock-stats";
 import { formatClockMs } from "@/lib/analytics/quick-stats";
 

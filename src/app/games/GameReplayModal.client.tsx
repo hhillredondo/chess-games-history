@@ -1,5 +1,3 @@
-"use client";
-
 import { Chess, type Move } from "chess.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 

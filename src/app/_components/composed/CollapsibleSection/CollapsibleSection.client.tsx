@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState, type ReactNode } from "react";
 
 interface CollapsibleSectionProps {
@@ -26,7 +24,6 @@ export default function CollapsibleSection({
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- one-shot localStorage read on mount; the rule's "no setState in effect" guidance does not apply to mount-time hydration of external storage */
     try {
       const stored = window.localStorage.getItem(STORAGE_PREFIX + id);
       if (stored === "1") setOpen(true);
@@ -35,7 +32,6 @@ export default function CollapsibleSection({
       // ignore
     }
     setHydrated(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, [id]);
 
   useEffect(() => {

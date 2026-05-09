@@ -1,5 +1,4 @@
 import type { Color, PieceSymbol } from "chess.js";
-import Image from "next/image";
 
 export interface IChessSquareProps {
   colour: ChessSquareColour;
@@ -33,7 +32,7 @@ export default function ChessBoardSquare(props: Readonly<IChessSquareProps>) {
       className={`flex select-none items-center justify-center overflow-hidden ${sizeClass} ${backgroundColour}`}
     >
       {piece != null && !large && (
-        <Image
+        <img
           src={pieceSrc(piece.color, piece.type)}
           alt=""
           width={64}
@@ -43,13 +42,11 @@ export default function ChessBoardSquare(props: Readonly<IChessSquareProps>) {
         />
       )}
       {piece != null && large && (
-        <Image
+        <img
           src={pieceSrc(piece.color, piece.type)}
           alt=""
-          fill
           draggable={false}
-          sizes="(max-width: 640px) 12vw, (max-width: 1024px) 9vw, 128px"
-          className="pointer-events-none object-contain p-[5%]"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain p-[5%]"
         />
       )}
     </div>

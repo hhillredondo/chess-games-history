@@ -1,5 +1,3 @@
-"use client";
-
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 interface ThemeContextType {
@@ -20,7 +18,6 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const storedTheme = localStorage.getItem("theme");
     if (storedTheme) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate theme after mount (localStorage)
       setTheme(storedTheme);
     }
   }, []);

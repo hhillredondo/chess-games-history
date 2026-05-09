@@ -1,5 +1,3 @@
-"use client";
-
 interface PlatformRow {
   label: string;
   username: string;
