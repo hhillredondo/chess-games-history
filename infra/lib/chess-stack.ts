@@ -11,6 +11,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Construct } from "constructs";
 
 export interface ChessStatsStackProps extends cdk.StackProps {
@@ -178,6 +179,49 @@ export class ChessStatsStack extends cdk.Stack {
     });
     const fnUrlDomain = cdk.Fn.select(2, cdk.Fn.split("/", fnUrl.url));
 
+    // ── AI Coach Lambda (Anthropic-backed, streaming SSE) ────────────────────
+    //
+    // The Anthropic API key is stored in AWS Secrets Manager at:
+    //   /chess-stats/{env}/anthropic-api-key
+    //
+    // Create/update with:
+    //   aws secretsmanager create-secret --name /chess-stats/dev/anthropic-api-key --secret-string "sk-ant-..."
+    //   aws secretsmanager update-secret --secret-id /chess-stats/dev/anthropic-api-key --secret-string "sk-ant-..."
+
+    const secretName = `/chess-stats/${envName}/anthropic-api-key`;
+    const coachSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "CoachApiKeySecret",
+      secretName
+    );
+
+    const coachFunction = new nodejs.NodejsFunction(this, "CoachFunction", {
+      functionName: `${prefix}-coach`,
+      entry: path.join(__dirname, "../../src/lambda/coach-handler.ts"),
+      depsLockFilePath: repoLockFile,
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_20_X,
+      // Anthropic streams can take tens of seconds for long coaching responses.
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      bundling: commonBundling,
+      environment: {
+        ANTHROPIC_API_KEY: coachSecret.secretValue.unsafeUnwrap(),
+      },
+    });
+
+    const coachFnUrl = coachFunction.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      // RESPONSE_STREAM is required for the SSE output mode used by coach-handler.
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      cors: {
+        allowedOrigins: ["*"],
+        allowedMethods: [lambda.HttpMethod.POST],
+        allowedHeaders: ["*"],
+      },
+    });
+    const coachFnUrlDomain = cdk.Fn.select(2, cdk.Fn.split("/", coachFnUrl.url));
+
     // ── Cleanup Lambda (nightly TTL + capacity sweep) ────────────────────────
 
     const cleanupFunction = new nodejs.NodejsFunction(this, "CleanupFunction", {
@@ -239,6 +283,12 @@ export class ChessStatsStack extends cdk.Stack {
       readTimeout: cdk.Duration.seconds(30),
     });
 
+    const coachApiOrigin = new origins.HttpOrigin(coachFnUrlDomain, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      // Coach responses can run for ~1m on long follow-ups; allow generous headroom.
+      readTimeout: cdk.Duration.seconds(60),
+    });
+
     const distribution = new cloudfront.Distribution(this, "Distribution", {
       comment: `${prefix}`,
       defaultRootObject: "index.html",
@@ -261,6 +311,15 @@ export class ChessStatsStack extends cdk.Stack {
         // Cache API takes precedence (more specific).
         "/api/cache*": {
           origin: cacheApiOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy:
+            cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        },
+        // Coach API — streams SSE from Lambda to the browser via CloudFront.
+        "/api/coach*": {
+          origin: coachApiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
@@ -316,6 +375,10 @@ export class ChessStatsStack extends cdk.Stack {
     new cdk.CfnOutput(this, "CacheLambdaUrl", {
       value: cacheFnUrl.url,
       description: "Raw cache Lambda Function URL",
+    });
+    new cdk.CfnOutput(this, "CoachLambdaUrl", {
+      value: coachFnUrl.url,
+      description: "Raw coach Lambda Function URL (streams SSE)",
     });
     new cdk.CfnOutput(this, "S3Bucket", {
       value: siteBucket.bucketName,

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-type View = "analytics" | "games";
+type View = "analytics" | "games" | "coach";
 
 interface ViewTabsProps {
   current: View;
@@ -12,6 +12,7 @@ interface ViewTabsProps {
 const TABS: { id: View; label: string; href: string }[] = [
   { id: "analytics", label: "Analytics", href: "/stats" },
   { id: "games", label: "Games", href: "/games" },
+  { id: "coach", label: "Coach", href: "/coach" },
 ];
 
 export default function ViewTabs({ current }: Readonly<ViewTabsProps>) {
