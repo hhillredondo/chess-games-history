@@ -4,6 +4,8 @@ import { GithubOidcStack } from "../lib/github-oidc-stack";
 
 const app = new cdk.App();
 
+cdk.Tags.of(app).add("Project", "chess-games-history");
+
 const envName = (app.node.tryGetContext("env") as string) ?? "dev";
 if (envName !== "dev" && envName !== "prod") {
   throw new Error(`Context 'env' must be 'dev' or 'prod', got '${envName}'`);
