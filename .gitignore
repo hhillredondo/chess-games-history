@@ -37,3 +37,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# CDK deploy outputs: contain raw Lambda Function URLs (authType NONE)
+.cdk-outputs-*.json

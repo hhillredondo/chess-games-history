@@ -205,10 +205,20 @@ export class ChessStatsStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       bundling: commonBundling,
+      // Hard ceiling on spend. The Function URL is unauthenticated, so without a
+      // concurrency cap a single caller can fan out arbitrarily many Anthropic
+      // requests. This bounds the blast radius of abuse to N concurrent streams.
+      reservedConcurrentExecutions: 5,
       environment: {
-        ANTHROPIC_API_KEY: coachSecret.secretValue.unsafeUnwrap(),
+        // Only the secret's name is passed. The handler fetches and caches the
+        // value at runtime, so the resolved key never lands in the function's
+        // environment (visible via lambda:GetFunctionConfiguration) and rotation
+        // does not require a redeploy.
+        ANTHROPIC_SECRET_ID: secretName,
       },
     });
+
+    coachSecret.grantRead(coachFunction);
 
     const coachFnUrl = coachFunction.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,

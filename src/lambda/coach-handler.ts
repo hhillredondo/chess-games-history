@@ -1,3 +1,7 @@
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { buildCoachRequest, parseCoachBody, sseEvent } from "../lib/coach/request";
@@ -10,8 +14,10 @@ import { buildCoachRequest, parseCoachBody, sseEvent } from "../lib/coach/reques
  * full completion. This matches the browser's EventSource-style consumption and keeps
  * perceived latency low for multi-paragraph coaching advice.
  *
- * The API key is read from the ANTHROPIC_API_KEY env var, which CDK populates from an
- * SSM Parameter Store entry at deploy time.
+ * The API key is fetched from Secrets Manager at runtime (the secret id arrives in
+ * ANTHROPIC_SECRET_ID) and cached for the life of the execution environment. It is
+ * deliberately not passed as an environment variable: that would expose the resolved
+ * key to anyone with lambda:GetFunctionConfiguration and pin rotation to a redeploy.
  */
 
 // `awslambda` is a runtime-injected global on Node.js Lambdas; no types ship
@@ -34,15 +40,25 @@ declare const awslambda: {
   };
 };
 
+const secrets = new SecretsManagerClient({});
+
 let _client: Anthropic | null = null;
-function client(): Anthropic {
-  if (!_client) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY env var is not set.");
-    }
-    _client = new Anthropic({ apiKey });
+
+async function client(): Promise<Anthropic> {
+  if (_client) return _client;
+
+  const secretId = process.env.ANTHROPIC_SECRET_ID;
+  if (!secretId) {
+    throw new Error("ANTHROPIC_SECRET_ID env var is not set.");
   }
+
+  const result = await secrets.send(new GetSecretValueCommand({ SecretId: secretId }));
+  const apiKey = result.SecretString;
+  if (!apiKey) {
+    throw new Error(`Secret ${secretId} has no string value.`);
+  }
+
+  _client = new Anthropic({ apiKey });
   return _client;
 }
 
@@ -133,7 +149,7 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream)
   });
 
   try {
-    const stream = client().messages.stream(buildCoachRequest(context, messages));
+    const stream = (await client()).messages.stream(buildCoachRequest(context, messages));
     for await (const chunk of stream) {
       if (
         chunk.type === "content_block_delta" &&
