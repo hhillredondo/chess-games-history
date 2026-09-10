@@ -34,7 +34,7 @@
     "@aws-sdk/client-lambda": "^3.658.0",
     "@aws-sdk/client-s3": "^3.658.0",
     "@aws-sdk/lib-dynamodb": "^3.658.0",
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.49.1",
     "@types/aws-lambda": "^8.10.145",
     "@types/node": "^22.15.3",
