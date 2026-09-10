@@ -40,3 +40,5 @@ yarn-error.log*
 
 # CDK deploy outputs: contain raw Lambda Function URLs (authType NONE)
 .cdk-outputs-*.json
+
+CLAUDE.md
